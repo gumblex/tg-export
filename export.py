@@ -24,8 +24,6 @@ re_onemsg = re.compile(r'^\{.+\}$')
 
 logging.basicConfig(stream=sys.stdout, format='%(asctime)s [%(levelname)s] %(message)s', level=logging.INFO)
 
-socket.setdefaulttimeout(60)
-
 class LRUCache:
 
     def __init__(self, maxlen):
@@ -232,12 +230,14 @@ def run_cli():
 def send_command(cmd):
     checkproc()
     TGSOCK.sendall(cmd.encode('utf-8') + b'\n')
+    TGSOCK.settimeout(60)
     data = TGSOCK.recv(1024)
     lines = data.split(b'\n', 1)
     if not lines[0].startswith(b'ANSWER '):
-        raise ValueError('Bad reply from telegram-cli: %s' % lines[0])
+        raise ValueError('Bad reply from telegram-cli: %s' % lines[0][:20])
     size = int(lines[0][7:].decode('ascii'))
     reply = lines[1] if len(lines) == 2 else b''
+    TGSOCK.settimeout(180)
     while len(reply) < size:
         reply += TGSOCK.recv(1024)
     return reply.decode('utf-8')
@@ -262,7 +262,7 @@ def export_for(item, pos=0, force=False):
         while res[0] is True and not (finished and res[1]):
             res = process(send_command('history %s 100 %d' % (item['print_name'], pos)))
             pos += 100
-    except socket.timeout:
+    except (socket.timeout, ValueError):
         return pos
     except Exception:
         logging.exception('Failed to get messages for ' + item['print_name'])
@@ -270,22 +270,29 @@ def export_for(item, pos=0, force=False):
     set_finished(item)
 
 def export_holes():
-    logging.info('Getting the remaining messages...')
     got = set(i[0] for i in CONN.execute('SELECT id FROM messages') if isinstance(i[0], int))
-    holes = set(range(1, max(logged) + 1)).difference(logged)
+    holes = list(set(range(1, max(got) + 1)).difference(got))
+    logging.info('Getting the remaining messages [%d-%d]...' % (min(holes), max(holes)))
     failed = []
+    # we need some uncertainty to work around the uncertainty of telegram-cli
+    random.shuffle(holes)
     for mid in holes:
         try:
             res = process(send_command('get_message %d' % mid))
             if not res[0]:
                 logging.warning('ID %d may not exist' % mid)
+        except (socket.timeout, ValueError):
+            failed.append(mid)
         except Exception:
             failed.append(mid)
-            logging.warning('Failed to get message ID %d' % mid)
+            logging.exception('Failed to get message ID %d' % mid)
     purge_queue()
     while failed:
+        logging.info('Retrying the remaining messages [%d-%d]...' % (min(failed), max(failed)))
         newlist = []
-        for mid in holes:
+        # see above
+        random.shuffle(failed)
+        for mid in failed:
             try:
                 res = process(send_command('get_message %d' % mid))
             except Exception:
