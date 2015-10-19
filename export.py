@@ -18,7 +18,6 @@ import functools
 import subprocess
 import collections
 
-
 re_msglist = re.compile(r'^\[.*\]$')
 re_onemsg = re.compile(r'^\{.+\}$')
 
@@ -344,15 +343,6 @@ def export_avatar(pid, ptype):
         res = json.loads(send_command('load_chat_photo ' + pname))
     ...
 
-def output_db():
-    pass
-
-def output_txt():
-    pass
-
-def output_html():
-    pass
-
 DB = None
 CONN = None
 PEER_CACHE = LRUCache(5)
@@ -368,7 +358,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description="Export Telegram messages.")
     parser.add_argument("-o", "--output", help="output path", default="export")
     parser.add_argument("-d", "--db", help="database path", default="telegram-export.db")
-    parser.add_argument("-t", "--format", help="output format, can be 'db'(default), 'txt', 'html'", default="db")
+    parser.add_argument("-t", "--type", help="export type, can be 'db'(default), '+avatar', '+img', '+voice'", default="db")
     parser.add_argument("-f", "--force", help="force download all messages", action='store_true')
     parser.add_argument("-e", "--tgbin", help="Telegram-cli binary path", default="bin/telegram-cli")
     args = parser.parse_args(argv)
@@ -376,12 +366,6 @@ def main(argv):
     TGCMD = args.tgbin
     DLDIR = args.output
     init_db(args.db)
-    if args.format == 'db':
-        outfunc = output_db
-    elif args.format == 'txt':
-        outfunc = output_txt
-    elif args.format == 'html':
-        outfunc = output_html
 
     cmdthr = threading.Thread(target=run_cli)
     cmdthr.daemon = True
