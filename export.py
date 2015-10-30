@@ -229,7 +229,7 @@ def run_cli():
 def send_command(cmd):
     checkproc()
     TGSOCK.sendall(cmd.encode('utf-8') + b'\n')
-    TGSOCK.settimeout(60)
+    TGSOCK.settimeout(120)
     data = TGSOCK.recv(1024)
     lines = data.split(b'\n', 1)
     if not lines[0].startswith(b'ANSWER '):
@@ -305,20 +305,21 @@ def export_text(force=False):
     for item in items:
         update_peer(item)
     purge_queue()
-    items = json.loads(send_command('dialog_list 100'))
+    dlist = items = json.loads(send_command('dialog_list 100'))
     dcount = 100
-    failed = []
     while items:
-        random.shuffle(items)
-        for item in items:
-            res = export_for(item, 0, force)
-            if res is not None:
-                failed.append((item, res))
-                logging.warning('Failed to get messages for %s from %d' % (item['print_name'], res))
-            purge_queue()
         items = json.loads(send_command('dialog_list 100 %d' % dcount))
+        dlist.extend(items)
         dcount += 100
-        DB.commit()
+    failed = []
+    random.shuffle(dlist)
+    for item in dlist:
+        res = export_for(item, 0, force)
+        if res is not None:
+            failed.append((item, res))
+            logging.warning('Failed to get messages for %s from %d' % (item['print_name'], res))
+        purge_queue()
+    DB.commit()
     while failed:
         newlist = []
         for key, item in enumerate(failed):
@@ -330,9 +331,7 @@ def export_text(force=False):
     DB.commit()
     logging.info('Export to database completed.')
 
-def export_avatar(pid, ptype):
-    if ptype == 'chat':
-        pid = -pid
+def export_avatar(pid):
     res = CONN.execute('SELECT print_name FROM exportinfo WHERE id = ?', (pid,)).fetchone()
     if not res:
         return False
@@ -381,7 +380,6 @@ def main(argv):
             PROC.terminate()
         purge_queue()
         DB.commit()
-    outfunc()
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))

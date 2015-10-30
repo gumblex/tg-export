@@ -77,10 +77,11 @@ def strftime(date, fmt='%Y-%m-%d %H:%M:%S'):
 
 class Messages:
 
-    def __init__(self):
+    def __init__(self, isbotdb=False):
         self.peers = Peers()
         self.peers.load()
         self.msgs = {}
+        self.isbotdb = isbotdb
         self.dialogs = collections.defaultdict(set)
         self.template = 'history.txt'
         self.jinjaenv = jinja2.Environment(loader=jinja2.FileSystemLoader('templates'))
