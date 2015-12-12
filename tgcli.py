@@ -63,7 +63,7 @@ class TelegramCliInterface:
             return path
 
     def checkproc(self):
-        if self.proc and self.proc.poll() is None:
+        if self.closed or self.proc and self.proc.poll() is None:
             return self.proc
         sockfile = os.path.join(self.tmpdir, 'tgcli.sock')
         self.proc = subprocess.Popen((self.cmd, '-k', self._get_pubkey(), '--json', '-R', '-C', '-S', sockfile) + self.extra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -95,7 +95,8 @@ class TelegramCliInterface:
             except BrokenPipeError:
                 pass
             finally:
-                self.proc.terminate()
+                if self.proc and self.proc.poll() is not None:
+                    self.proc.terminate()
             self.ready.clear()
             self.on_exit()
 
@@ -107,7 +108,9 @@ class TelegramCliInterface:
     def close(self):
         self.ready.clear()
         self.closed = True
-        if self.proc:
+        try:
+            self.proc.wait(2)
+        except subprocess.TimeoutExpired:
             self.proc.kill()
         if self.thread:
             self.thread.join(2)
@@ -118,6 +121,7 @@ class TelegramCliInterface:
     def __enter__(self):
         if not self.thread:
             self.run()
+        self.ready.wait()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
