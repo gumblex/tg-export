@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
 import re
 import sys
 import json
@@ -11,12 +10,11 @@ import random
 import socket
 import sqlite3
 import logging
-import tempfile
 import argparse
-import threading
 import functools
-import subprocess
 import collections
+
+import tgcli
 
 re_msglist = re.compile(r'^\[.*\]$')
 re_onemsg = re.compile(r'^\{.+\}$')
@@ -122,6 +120,7 @@ def init_db(filename):
     'finished INTEGER'
     ')')
 
+
 def update_peer(peer):
     global PEER_CACHE
     res = PEER_CACHE.get((peer['id'], peer['type']))
@@ -164,19 +163,17 @@ def log_msg(msg):
     CONN.execute('REPLACE INTO messages (id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (msg['id'], getpeerid(msg, 'from'), getpeerid(msg, 'to'), msg.get('text'), json.dumps(msg['media']) if 'media' in msg else None, msg.get('date'), getpeerid(msg, 'fwd_from'), msg.get('fwd_date'), msg.get('reply_id'), msg.get('out'), msg.get('unread'), msg.get('service'), json.dumps(msg['action']) if 'action' in msg else None, msg.get('flags')))
     return ret
 
-def process(ln):
-    ln = ln.strip()
+def process(obj):
     try:
-        if re_msglist.match(ln):
-            msglist = json.loads(ln)
-            if not msglist:
+        if isinstance(obj, list):
+            if not obj:
                 return (False, 0)
             hit = 0
-            for msg in json.loads(ln):
+            for msg in obj:
                 hit += log_msg(msg)
             return (True, hit)
-        elif re_onemsg.match(ln):
-            msg = json.loads(ln)
+        elif isinstance(obj, dict):
+            msg = obj
             if msg.get('event') == 'message':
                 return (True, log_msg(msg))
             elif msg.get('event') == 'online-status':
@@ -188,58 +185,6 @@ def process(ln):
     except Exception as ex:
         logging.exception('Failed to process a line of result: ' + ln)
     return (None, None)
-
-# child thread
-def checkproc():
-    global PROC, TGSOCK, TGCMD
-    if PROC is None or PROC.poll() is not None:
-        fd, sockfile = tempfile.mkstemp()
-        os.close(fd)
-        os.remove(sockfile)
-        PROC = subprocess.Popen((TGCMD, '-k', os.path.join(os.path.dirname(__file__), 'tg-server.pub'), '--json', '-R', '-C', '-S', sockfile), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        while not os.path.exists(sockfile):
-            time.sleep(0.5)
-        TGSOCK = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        TGSOCK.connect(sockfile)
-    return PROC
-
-# child thread
-def run_cli():
-    while 1:
-        logging.info('Starting telegram-cli...')
-        checkproc()
-        TGREADY.set()
-        logging.info('Telegram-cli started.')
-        try:
-            while 1:
-                out = PROC.stdout.readline().decode('utf-8')
-                if out:
-                    if out[0] not in '[{':
-                        logging.info(out.strip())
-                    else:
-                        logging.debug(out.strip())
-                    MSG_Q.put(out)
-                else:
-                    break
-        except BrokenPipeError:
-            pass
-        TGREADY.clear()
-        logging.warning('telegram-cli died.')
-
-def send_command(cmd):
-    checkproc()
-    TGSOCK.sendall(cmd.encode('utf-8') + b'\n')
-    TGSOCK.settimeout(120)
-    data = TGSOCK.recv(1024)
-    lines = data.split(b'\n', 1)
-    if not lines[0].startswith(b'ANSWER '):
-        raise ValueError('Bad reply from telegram-cli: %s' % lines[0][:20])
-    size = int(lines[0][7:].decode('ascii'))
-    reply = lines[1] if len(lines) == 2 else b''
-    TGSOCK.settimeout(180)
-    while len(reply) < size:
-        reply += TGSOCK.recv(1024)
-    return reply.decode('utf-8')
 
 def purge_queue():
     while 1:
@@ -253,13 +198,13 @@ def export_for(item, pos=0, force=False):
     try:
         if not pos:
             update_peer(item)
-            res = process(send_command('history %s 100' % item['print_name']))
+            res = process(TGCLI.send_command('history %s 100' % item['print_name']))
             pos = 100
         else:
             res = (True, 0)
         finished = not force and is_finished(item)
         while res[0] is True and not (finished and res[1]):
-            res = process(send_command('history %s 100 %d' % (item['print_name'], pos)))
+            res = process(TGCLI.send_command('history %s 100 %d' % (item['print_name'], pos)))
             pos += 100
     except (socket.timeout, ValueError):
         return pos
@@ -277,7 +222,7 @@ def export_holes():
     random.shuffle(holes)
     for mid in holes:
         try:
-            res = process(send_command('get_message %d' % mid))
+            res = process(TGCLI.send_command('get_message %d' % mid))
             if not res[0]:
                 logging.warning('ID %d may not exist' % mid)
         except (socket.timeout, ValueError):
@@ -293,7 +238,7 @@ def export_holes():
         random.shuffle(failed)
         for mid in failed:
             try:
-                res = process(send_command('get_message %d' % mid))
+                res = process(TGCLI.send_command('get_message %d' % mid))
             except Exception:
                 failed.append(mid)
         failed = newlist
@@ -301,14 +246,14 @@ def export_holes():
 
 def export_text(force=False):
     logging.info('Exporting messages...')
-    items = json.loads(send_command('contact_list'))
+    items = TGCLI.cmd_contact_list()
     for item in items:
         update_peer(item)
     purge_queue()
-    dlist = items = json.loads(send_command('dialog_list 100'))
+    dlist = items = TGCLI.cmd_dialog_list(100)
     dcount = 100
     while items:
-        items = json.loads(send_command('dialog_list 100 %d' % dcount))
+        items = TGCLI.cmd_dialog_list(100, dcount)
         dlist.extend(items)
         dcount += 100
     failed = []
@@ -337,23 +282,20 @@ def export_avatar(pid):
         return False
     pname = res[0]
     if pid > 0:
-        res = json.loads(send_command('load_user_photo ' + pname))
+        res = TGCLI.cmd_load_user_photo(pname)
     else:
-        res = json.loads(send_command('load_chat_photo ' + pname))
+        res = TGCLI.cmd_load_chat_photo(pname)
     ...
 
 DB = None
 CONN = None
 PEER_CACHE = LRUCache(5)
 MSG_Q = queue.Queue()
-PROC = None
-TGSOCK = None
-TGREADY = threading.Event()
-TGCMD = 'bin/telegram-cli'
+TGCLI = None
 DLDIR = '.'
 
 def main(argv):
-    global TGCMD, DLDIR
+    global TGCLI, DLDIR
     parser = argparse.ArgumentParser(description="Export Telegram messages.")
     parser.add_argument("-o", "--output", help="output path", default="export")
     parser.add_argument("-d", "--db", help="database path", default="telegram-export.db")
@@ -362,22 +304,22 @@ def main(argv):
     parser.add_argument("-e", "--tgbin", help="Telegram-cli binary path", default="bin/telegram-cli")
     args = parser.parse_args(argv)
 
-    TGCMD = args.tgbin
     DLDIR = args.output
     init_db(args.db)
 
-    cmdthr = threading.Thread(target=run_cli)
-    cmdthr.daemon = True
-    cmdthr.start()
-    TGREADY.wait()
+    TGCLI = tgcli.TelegramCliInterface(args.tgbin, run=False)
+    TGCLI.on_json = tgcli.do_nothing
+    TGCLI.on_info = tgcli.do_nothing
+    TGCLI.on_text = MSG_Q.put
+    TGCLI.run()
+    TGCLI.ready.wait()
 
     try:
         time.sleep(1)
         export_text(args.force)
         export_holes()
     finally:
-        if PROC:
-            PROC.terminate()
+        TGCLI.close()
         purge_queue()
         DB.commit()
 

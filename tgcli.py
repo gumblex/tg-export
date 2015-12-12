@@ -22,9 +22,10 @@ Slv8kg9qv1m6XHVQY3PnEw+QQtqSIXklHwIDAQAB
 '''
 
 logger = logging.getLogger('tgcli')
+do_nothing = lambda *args, **kwargs: None
 
 class TelegramCliInterface:
-    def __init__(self, cmd, extra_args, run=True):
+    def __init__(self, cmd, extra_args=(), run=True):
         self.cmd = cmd
         self.extra_args = tuple(extra_args)
         self.proc = None
@@ -34,9 +35,10 @@ class TelegramCliInterface:
         self.thread = None
         self.tmpdir = tempfile.mkdtemp()
         # Event callbacks
-        # `on_info` and `on_json` are for stdout
+        # `on_info`, `on_json` and `on_text` are for stdout
         self.on_info = logger.info
         self.on_json = logger.debug
+        self.on_text = do_nothing
         self.on_start = lambda: logger.info('Telegram-cli started.')
         self.on_exit = lambda: logger.warning('Telegram-cli died.')
         if run:
@@ -79,6 +81,7 @@ class TelegramCliInterface:
                 while self.ready.is_set():
                     out = self.proc.stdout.readline().decode('utf-8')
                     if out:
+                        self.on_text(out)
                         if out[0] in '[{':
                             try:
                                 self.on_json(json.loads(out.strip()))
@@ -107,6 +110,7 @@ class TelegramCliInterface:
             self.thread.join(2)
         if self.tmpdir:
             shutil.rmtree(self.tmpdir, True)
+            self.tmpdir = None
 
     def __enter__(self):
         if not self.thread:
