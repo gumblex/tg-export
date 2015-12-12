@@ -22,6 +22,7 @@ Slv8kg9qv1m6XHVQY3PnEw+QQtqSIXklHwIDAQAB
 '''
 
 logger = logging.getLogger('tgcli')
+logger.setLevel(logging.INFO)
 do_nothing = lambda *args, **kwargs: None
 
 class TelegramCliInterface:
@@ -117,6 +118,7 @@ class TelegramCliInterface:
     def __enter__(self):
         if not self.thread:
             self.run()
+        return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
