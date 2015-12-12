@@ -106,6 +106,8 @@ class TelegramCliInterface:
     def close(self):
         self.ready.clear()
         self.closed = True
+        if self.proc:
+            self.proc.kill()
         if self.thread:
             self.thread.join(2)
         if self.tmpdir:
