@@ -21,20 +21,24 @@ Slv8kg9qv1m6XHVQY3PnEw+QQtqSIXklHwIDAQAB
 -----END RSA PUBLIC KEY-----
 '''
 
+logger = logging.getLogger('tgcli')
+
 class TelegramCliInterface:
-    def __init__(self, cmd, run=True):
+    def __init__(self, cmd, extra_args, run=True):
         self.cmd = cmd
+        self.extra_args = tuple(extra_args)
         self.proc = None
         self.sock = None
         self.ready = threading.Event()
         self.closed = False
         self.thread = None
         self.tmpdir = tempfile.mkdtemp()
-        # event callbacks
-        self.on_info = logging.info
-        self.on_json = logging.debug
-        self.on_start = lambda: logging.info('Telegram-cli started.')
-        self.on_exit = lambda: logging.warning('Telegram-cli died.')
+        # Event callbacks
+        # `on_info` and `on_json` are for stdout
+        self.on_info = logger.info
+        self.on_json = logger.debug
+        self.on_start = lambda: logger.info('Telegram-cli started.')
+        self.on_exit = lambda: logger.warning('Telegram-cli died.')
         if run:
             self.run()
 
@@ -59,7 +63,7 @@ class TelegramCliInterface:
         if self.proc and self.proc.poll() is None:
             return self.proc
         sockfile = os.path.join(self.tmpdir, 'tgcli.sock')
-        self.proc = subprocess.Popen((self.cmd, '-k', self._get_pubkey(), '--json', '-R', '-C', '-S', sockfile), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.proc = subprocess.Popen((self.cmd, '-k', self._get_pubkey(), '--json', '-R', '-C', '-S', sockfile) + self.extra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         while not os.path.exists(sockfile):
             time.sleep(0.5)
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -76,7 +80,10 @@ class TelegramCliInterface:
                     out = self.proc.stdout.readline().decode('utf-8')
                     if out:
                         if out[0] in '[{':
-                            self.on_json(out.strip())
+                            try:
+                                self.on_json(json.loads(out.strip()))
+                            except ValueError:
+                                self.on_info(out.strip())
                         else:
                             self.on_info(out.strip())
                     else:
@@ -112,6 +119,10 @@ class TelegramCliInterface:
         self.close()
 
     def send_command(self, cmd, timeout=180, resync=True):
+        '''
+        Send a command to tg-cli.
+        use `resync` for consuming text since last timeout.
+        '''
         self.checkproc()
         self.sock.settimeout(timeout)
         self.sock.sendall(cmd.encode('utf-8') + b'\n')
@@ -135,6 +146,11 @@ class TelegramCliInterface:
             return ret
 
     def __getattr__(self, name):
+        '''
+        Convenience command calling: cmd_*(*args, **kwargs)
+        `args` are for the tg-cli command
+        `kwargs` are for `send_command`
+        '''
         if name.startswith('cmd_'):
             fn = lambda *args, **kwargs: self.send_command(' '.join(map(str, (name[4:],) + args)), **kwargs)
             return fn
