@@ -163,7 +163,7 @@ class TelegramCliInterface:
 
 if __name__ == "__main__":
     import sys
-    logging.basicConfig(stream=sys.stderr, format='%(asctime)s [%(levelname)s] %(message)s', level=logging.DEBUG)
-    tgcli = TelegramCliInterface(sys.argv[1])
-    for ln in sys.stdin:
-        print(tgcli.send_command(ln.strip()))
+    logging.basicConfig(stream=sys.stderr, format='%(asctime)s [%(levelname)s] %(message)s', level=logging.INFO)
+    with TelegramCliInterface(sys.argv[1]) as tgcli:
+        for ln in sys.stdin:
+            print(tgcli.send_command(ln.strip()))
