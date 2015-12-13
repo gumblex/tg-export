@@ -276,17 +276,6 @@ def export_text(force=False):
     DB.commit()
     logging.info('Export to database completed.')
 
-def export_avatar(pid):
-    res = CONN.execute('SELECT print_name FROM exportinfo WHERE id = ?', (pid,)).fetchone()
-    if not res:
-        return False
-    pname = res[0]
-    if pid > 0:
-        res = TGCLI.cmd_load_user_photo(pname)
-    else:
-        res = TGCLI.cmd_load_chat_photo(pname)
-    ...
-
 DB = None
 CONN = None
 PEER_CACHE = LRUCache(5)
@@ -302,6 +291,7 @@ def main(argv):
     parser.add_argument("-t", "--type", help="export type, can be 'db'(default), '+avatar', '+img', '+voice'", default="db")
     parser.add_argument("-f", "--force", help="force download all messages", action='store_true')
     parser.add_argument("-e", "--tgbin", help="Telegram-cli binary path", default="bin/telegram-cli")
+    parser.add_argument("-i", "--image", help="Download image by message ID, can be a single ID, a file name, or - for STDIN")
     args = parser.parse_args(argv)
 
     DLDIR = args.output
