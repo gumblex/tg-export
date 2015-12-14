@@ -224,9 +224,13 @@ def autolink(text, img=True):
 def smartname(user, limit=20):
     if 'first_name' not in user:
         return '<%s>' % 'Unknown'[:limit-2]
-    pn = printname(user['first_name'], user.get('last_name', ''))
+    first, last = user['first_name'], user.get('last_name', '')
+    pn = printname(first, last)
     if len(pn) > limit:
-        return user['first_name'][:limit]
+        if len(first) > limit:
+            return first.split(None, 1)[0][:limit]
+        else:
+            return first[:limit]
     else:
         return pn
 
