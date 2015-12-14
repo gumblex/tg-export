@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import sys
 import time
 import json
@@ -11,6 +12,9 @@ import argparse
 import collections
 
 import jinja2
+
+re_url = re.compile(r'(?i)\b((?:[a-z][\w-]+:(?:/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:\'".,<>?«»“”‘’]))', re.I)
+imgfmt = frozenset(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'))
 
 printname = lambda first, last='': (first + ' ' + last if last else first) or '<Unknown>'
 
@@ -100,6 +104,8 @@ class Messages:
         self.template = 'history.txt'
         self.jinjaenv = jinja2.Environment(loader=jinja2.FileSystemLoader('templates'))
         self.jinjaenv.filters['strftime'] = strftime
+        self.jinjaenv.filters['autolink'] = autolink
+        self.jinjaenv.filters['smartname'] = smartname
 
     def init_db(self, filename, dbtype='cli', botuserdb=False, botdest=None):
         if os.path.isfile(filename):
@@ -206,6 +212,24 @@ class Messages:
         template = self.jinjaenv.get_template(self.template)
         return template.render(**kvars)
 
+def autolink(text, img=True):
+    match = re_url.search(text)
+    if not match:
+        return text
+    if img and os.path.splitext(match.group(1))[1] in imgfmt:
+        return match.expand('<a href="\1"><img src="\1"></a>')
+    else:
+        return match.expand('<a href="\1">\1</a>')
+
+def smartname(user, limit=20):
+    if 'first_name' not in user:
+        return '<%s>' % 'Unknown'[:limit-2]
+    pn = printname(user['first_name'], user.get('last_name', ''))
+    if len(pn) > limit:
+        return user['first_name'][:limit]
+    else:
+        return pn
+
 DB = None
 CONN = None
 
@@ -221,6 +245,8 @@ def main(argv):
     args = parser.parse_args(argv)
 
     msg = Messages()
+    if args.type == 'html':
+        msg.template = 'simple.html'
     if args.db:
         msg.init_db(args.db, 'cli')
     if args.botdb:
