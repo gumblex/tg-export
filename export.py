@@ -245,17 +245,21 @@ def export_holes():
         purge_queue()
 
 def export_text(force=False):
-    logging.info('Exporting messages...')
+    logging.info('Getting contacts...')
     items = TGCLI.cmd_contact_list()
     for item in items:
         update_peer(item)
     purge_queue()
-    dlist = items = TGCLI.cmd_dialog_list(100)
+    logging.info('Getting dialogs...')
+    dlist = items = lastitems = TGCLI.cmd_dialog_list(100)
     dcount = 100
     while items:
         items = TGCLI.cmd_dialog_list(100, dcount)
+        if frozenset(d['id'] for d in items) == frozenset(d['id'] for d in lastitems):
+            break
         dlist.extend(items)
         dcount += 100
+    logging.info('Exporting messages...')
     failed = []
     random.shuffle(dlist)
     for item in dlist:
