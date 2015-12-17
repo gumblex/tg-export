@@ -47,52 +47,73 @@ unkmsg = lambda mid: {
     'flags': 0
 }
 
-def media_bot2cli(text, media=None):
-    if not media:
-        return None, None
-    dm = {}
-    da = {}
-    if ('audio' in media or 'document' in media
-        or 'sticker' in media or 'video' in media
-        or 'voice' in media):
-        dm['type'] = 'document'
-    elif 'photo' in media:
-        dm['type'] = 'photo'
-        dm['caption'] = text or ''
-    elif 'contact' in media:
-        dm['type'] = 'contact'
-        dm['phone'] = media['contact']['phone_number']
-        dm['first_name'] = media['contact']['first_name']
-        dm['last_name'] = media['contact'].get('last_name')
-        dm['user_id'] = media['contact'].get('user_id')
-    elif 'location' in media:
-        dm['type'] = 'geo'
-        dm['longitude'] = media['location']['longitude']
-        dm['latitude'] = media['location']['latitude']
-    elif 'new_chat_participant' in media:
-        user = media['new_chat_participant']
-        da['type'] = 'chat_add_user'
-        da['user'] = self.peer.get(user['id']) or unkuser(user)
-    elif 'left_chat_participant' in media:
-        user = media['left_chat_participant']
-        da['type'] = 'chat_del_user'
-        da['user'] = self.peer.get(user['id']) or unkuser(user)
-    elif 'new_chat_title' in media:
-        da['type'] = 'chat_rename'
-        da['title'] = media['new_chat_title']
-    elif 'new_chat_photo' in media:
-        da['type'] = 'chat_change_photo'
-    elif 'delete_chat_photo' in media:
-        da['type'] = 'chat_delete_photo'
-    elif 'group_chat_created' in media:
-        da['type'] = 'chat_created'
-        da['title'] = ''
-    return json.dumps(dm) if dm else None, json.dumps(da) if da else None
+def rangetosql(s):
+    if s in ':':
+        return ''
+    sp = s.split(':')
+    if len(sp) == 1:
+        index = int(sp[0])
+        if index < 0:
+            return 'LIMIT 1 OFFSET count(*)' + sp[0]
+        else:
+            return 'LIMIT 1 OFFSET ' + sp[0]
+    elif len(sp) == 2:
+        if not sp[0] and not sp[1]:
+            return ''
+        offset, limit = '0', '-1'
+        start, end = None, None
+        if sp[0]:
+            start = int(sp[0])
+            if start < 0:
+                offset = 'count(*)-%d' % abs(start)
+            else:
+                offset = sp[0]
+        if sp[1]:
+            end = int(sp[1])
+            if end < 0:
+                if start is None:
+                    limit = 'count(*)%+d' % end
+                elif start < 0:
+                    limit = str(end - start)
+                else:
+                    limit = 'count(*)-%d' % (end - start)
+            else:
+                if start is None:
+                    limit = sp[1]
+                elif start < 0:
+                    limit = '%d-count(*)' % (end - start)
+                else:
+                    limit = str(end - start)
+        return 'LIMIT %s OFFSET %s' % (limit, offset)
+    else:
+        raise ValueError('step is not supported')
+
+def _test_rangetosql():
+    def evalrts(lst, pos1, pos2):
+        expr = '%s:%s' % ('' if pos1 is None else pos1, '' if pos2 is None else pos2)
+        ret = rangetosql(expr) or 'LIMIT 0 OFFSET -1'
+        limit, offset = ret[6:].replace('count(*)', 'n').split(' OFFSET ')
+        n = len(lst)
+        expect = lst[pos1:pos2]
+        off = eval(offset)
+        end = None if limit == '-1' else off+eval(limit)
+        assert lst[off:end] == expect
+    s = ''.join(map(chr, range(32, 127)))
+    n = len(s)
+    for i in range(-n, n):
+        pos1 = n - i if i < 0 else i
+        for j in range(-n, n):
+            pos2 = n - j if j < 0 else j
+            if pos1 <= pos2:
+                evalrts(s, pos1, pos2)
+                evalrts(s, None, pos2)
+        evalrts(s, pos1, None)
 
 class Messages:
 
     def __init__(self, isbotdb=False):
         self.peers = collections.defaultdict(unkpeer)
+        self.range = None
         self.msgs = {}
         self.db_cli = None
         self.conn_cli = None
@@ -122,16 +143,17 @@ class Messages:
         else:
             raise FileNotFoundError('Database not found: ' + filename)
 
-    def msgfromdb(self, dbtype='cli', botdest=None):
+    def msgfromdb(self, dbtype='cli'):
+        limit = ' ' + rangetosql(self.range) if self.range else ''
         if dbtype == 'cli':
-            for row in self.conn_cli.execute('SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages ORDER BY id ASC'):
+            for row in self.conn_cli.execute('SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages ORDER BY id ASC' + limit):
                 yield row
-        elif dbtype == 'bot' and botdest:
-            for mid, src, text, media, date, fwd_src, fwd_date, reply_id in self.conn_bot.execute('SELECT id, src, text, media, date, fwd_src, fwd_date, reply_id FROM messages ORDER BY date ASC, id ASC'):
-                service, action = media_bot2cli(text, media)
-                yield mid, src, botdest, text, media, date, fwd_src, fwd_date, reply_id, 0, 0, service, action, 256
+        elif dbtype == 'bot' and self.botdest:
+            for mid, src, text, media, date, fwd_src, fwd_date, reply_id in self.conn_bot.execute('SELECT id, src, text, media, date, fwd_src, fwd_date, reply_id FROM messages ORDER BY date ASC, id ASC' + limit):
+                service, action = self.media_bot2cli(text, media)
+                yield mid, src, self.botdest, text, media, date, fwd_src, fwd_date, reply_id, 0, 0, service, action, 256
         else:
-            raise ValueError('dbtype or botdest is invalid')
+            raise ValueError('dbtype or self.botdest is invalid')
 
     def userfromdb(self, dbtype='cli'):
         if dbtype == 'cli':
@@ -163,10 +185,53 @@ class Messages:
                     'print': printname(first_name, last_name)
                 })
 
+    def media_bot2cli(self, text, media=None):
+        if not media:
+            return None, None
+        media = json.loads(media)
+        dm = {}
+        da = {}
+        if ('audio' in media or 'document' in media
+            or 'sticker' in media or 'video' in media
+            or 'voice' in media):
+            dm['type'] = 'document'
+        elif 'photo' in media:
+            dm['type'] = 'photo'
+            dm['caption'] = text or ''
+        elif 'contact' in media:
+            dm['type'] = 'contact'
+            dm['phone'] = media['contact']['phone_number']
+            dm['first_name'] = media['contact']['first_name']
+            dm['last_name'] = media['contact'].get('last_name')
+            dm['user_id'] = media['contact'].get('user_id')
+        elif 'location' in media:
+            dm['type'] = 'geo'
+            dm['longitude'] = media['location']['longitude']
+            dm['latitude'] = media['location']['latitude']
+        elif 'new_chat_participant' in media:
+            user = media['new_chat_participant']
+            da['type'] = 'chat_add_user'
+            da['user'] = self.peers.get(user['id']) or unkuser(user)
+        elif 'left_chat_participant' in media:
+            user = media['left_chat_participant']
+            da['type'] = 'chat_del_user'
+            da['user'] = self.peers.get(user['id']) or unkuser(user)
+        elif 'new_chat_title' in media:
+            da['type'] = 'chat_rename'
+            da['title'] = media['new_chat_title']
+        elif 'new_chat_photo' in media:
+            da['type'] = 'chat_change_photo'
+        elif 'delete_chat_photo' in media:
+            da['type'] = 'chat_delete_photo'
+        elif 'group_chat_created' in media:
+            da['type'] = 'chat_created'
+            da['title'] = ''
+        return json.dumps(dm) if dm else None, json.dumps(da) if da else None
+
 
 
     def getmsgs(self):
-        for mid, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags in self.conn_cli.execute('SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages ORDER BY id ASC'):
+        for mid, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags in self.msgfromdb('cli' if self.db_cli else 'bot'):
             if fwd_src:
                 msgtype = 'fwd'
                 extra = {'fwd_src': self.peers[fwd_src], 'fwd_date': fwd_date}
@@ -242,13 +307,15 @@ def main(argv):
     parser.add_argument("-o", "--output", help="output path", default="export.txt")
     parser.add_argument("-d", "--db", help="tg-export database path", default="telegram-export.db")
     parser.add_argument("-b", "--botdb", help="tg-chatdig database path", default="")
-    parser.add_argument("-D", "--botdb-dest", help="tg-chatdig logged chat id")
+    parser.add_argument("-D", "--botdb-dest", help="tg-chatdig logged chat id", type=int)
     parser.add_argument("-u", "--botdb-user", action="store_true", help="use user information in tg-chatdig database first")
     parser.add_argument("-t", "--type", help="export type, can be 'txt'(default), 'html'", default="txt")
     parser.add_argument("-p", "--peer", help="export certain peer id", type=int)
+    parser.add_argument("-r", "--range", help="message range in slice format")
     args = parser.parse_args(argv)
 
     msg = Messages()
+    msg.range = args.range
     if args.type == 'html':
         msg.template = 'simple.html'
     if args.db:
