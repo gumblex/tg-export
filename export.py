@@ -253,15 +253,18 @@ def export_holes():
         purge_queue()
 
 def export_text(force=False):
-    logging.info('Getting dialogs...')
+    logging.info('Getting contacts...')
     items = TGCLI.cmd_contact_list()
     for item in items:
         update_peer(item)
     purge_queue()
-    dlist = items = TGCLI.cmd_dialog_list(100)
+    logging.info('Getting dialogs...')
+    dlist = items = lastitems = TGCLI.cmd_dialog_list(100)
     dcount = 100
     while items:
         items = TGCLI.cmd_dialog_list(100, dcount)
+        if frozenset(d['id'] for d in items) == frozenset(d['id'] for d in lastitems):
+            break
         dlist.extend(items)
         dcount += 100
     logging.info('Exporting messages...')
@@ -307,9 +310,10 @@ def main(argv):
     init_db(args.db)
 
     TGCLI = tgcli.TelegramCliInterface(args.tgbin, run=False)
-    TGCLI.on_json = tgcli.do_nothing
-    TGCLI.on_info = tgcli.do_nothing
-    TGCLI.on_text = MSG_Q.put
+    TGCLI.on_json = MSG_Q.put
+    #TGCLI.on_info = tgcli.do_nothing
+    #TGCLI.on_text = MSG_Q.put
+    #TGCLI.on_start = TGCLI.cmd_dialog_list
     TGCLI.run()
     TGCLI.ready.wait()
 
