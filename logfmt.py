@@ -157,9 +157,10 @@ class Messages:
 
     def userfromdb(self, dbtype='cli'):
         if dbtype == 'cli':
-            for pid, phone, username, first_name, last_name, flags in self.conn_cli.execute('SELECT id, phone, username, first_name, last_name, flags FROM users'):
-                self.peers[pid] = {
+            for pid, permanent_id, phone, username, first_name, last_name, flags in self.conn_cli.execute('SELECT id, permanent_id, phone, username, first_name, last_name, flags FROM users'):
+                self.peers[permanent_id] = {
                     'id': pid,
+                    'permanent_id': permanent_id,
                     'phone': phone,
                     'username': username,
                     'first_name': first_name,
@@ -167,11 +168,24 @@ class Messages:
                     'print': printname(first_name, last_name),
                     'flags': flags
                 }
-            for pid, title, members_num, flags in self.conn_cli.execute('SELECT id, title, members_num, flags FROM chats'):
-                self.peers[-pid] = {
-                    'id': -pid,
+            for pid, title, members_num, flags in self.conn_cli.execute('SELECT id, permanent_id, title, members_num, flags FROM chats'):
+                self.peers[permanent_id] = {
+                    'id': pid,
+                    'permanent_id': permanent_id,
                     'title': title,
                     'members_num': members_num,
+                    'print': printname(title),
+                    'flags': flags
+                }
+            for pid, title, members_num, admins_count, kicked_count, flags in self.conn_cli.execute('SELECT id, permanent_id, title, participants_count, admins_count, kicked_count, flags FROM chats'):
+                self.peers[permanent_id] = {
+                    'id': pid,
+                    'permanent_id': permanent_id,
+                    'title': title,
+                    # keep compatible with chats
+                    'members_num': members_num,
+                    'admins_count': admins_count,
+                    'kicked_count': kicked_count,
                     'print': printname(title),
                     'flags': flags
                 }

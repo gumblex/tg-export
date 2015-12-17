@@ -6,15 +6,19 @@ import sys
 import json
 import time
 import queue
+import base64
 import random
 import socket
 import sqlite3
 import logging
 import argparse
+import binascii
 import functools
 import collections
 
 import tgcli
+
+__version__ = '2.0'
 
 re_msglist = re.compile(r'^\[.*\]$')
 re_onemsg = re.compile(r'^\{.+\}$')
@@ -71,84 +75,88 @@ def uniq(seq, key=None): # Dave Kirby
 
 def getpeerid(obj, key):
     if key in obj:
-        pid = obj[key]['id']
-        if obj[key]['type'] == 'user':
-            return pid
-        else:
-            return -pid
-
-peer_key = lambda peer: (peer['id'], peer['type'])
+        return obj[key]['id']
 
 def init_db(filename):
     global DB, CONN
     DB = sqlite3.connect(filename)
     CONN = DB.cursor()
     CONN.execute('CREATE TABLE IF NOT EXISTS messages ('
-    'id INTEGER PRIMARY KEY,'
-    'src INTEGER,'
-    'dest INTEGER,'
-    'text TEXT,'
-    'media TEXT,'
-    'date INTEGER,'
-    'fwd_src INTEGER,'
-    'fwd_date INTEGER,'
-    'reply_id INTEGER,'
-    'out INTEGER,'
-    'unread INTEGER,'
-    'service INTEGER,'
-    'action TEXT,'
-    'flags INTEGER'
+        'id TEXT PRIMARY KEY,'
+        'src TEXT,'
+        'dest TEXT,'
+        'text TEXT,'
+        'media TEXT,'
+        'date INTEGER,'
+        'fwd_src TEXT,'
+        'fwd_date INTEGER,'
+        'reply_id TEXT,'
+        'out INTEGER,'
+        'unread INTEGER,'
+        'service INTEGER,'
+        'action TEXT,'
+        'flags INTEGER'
     ')')
     CONN.execute('CREATE TABLE IF NOT EXISTS users ('
-    'id INTEGER PRIMARY KEY,'
-    'phone TEXT,'
-    'username TEXT,'
-    'first_name TEXT,'
-    'last_name TEXT,'
-    'flags INTEGER'
+        'id INTEGER PRIMARY KEY,' # peer_id
+        'permanent_id TEXT UNIQUE,'
+        'phone TEXT,'
+        'username TEXT,'
+        'first_name TEXT,'
+        'last_name TEXT,'
+        'flags INTEGER'
     ')')
     CONN.execute('CREATE TABLE IF NOT EXISTS chats ('
-    'id INTEGER PRIMARY KEY,'
-    'title TEXT,'
-    'members_num INTEGER,'
-    'flags INTEGER'
+        'id INTEGER PRIMARY KEY,' # peer_id
+        'permanent_id TEXT UNIQUE,'
+        'title TEXT,'
+        'members_num INTEGER,'
+        'flags INTEGER'
     ')')
-    # no better ways to get print_name by id :|
-    CONN.execute('CREATE TABLE IF NOT EXISTS exportinfo ('
-    'id INTEGER PRIMARY KEY,'
-    'print_name TEXT,'
-    'finished INTEGER'
+    CONN.execute('CREATE TABLE IF NOT EXISTS channels ('
+        'id INTEGER PRIMARY KEY,' # peer_id
+        'permanent_id TEXT UNIQUE,'
+        'title TEXT,'
+        'participants_count INTEGER,'
+        'admins_count INTEGER,'
+        'kicked_count INTEGER,'
+        'flags INTEGER'
+    ')')
+    CONN.execute('CREATE TABLE IF NOT EXISTS peerinfo ('
+        'permanent_id TEXT PRIMARY KEY,'
+        'type TEXT,'
+        'print_name TEXT,'
+        'finished INTEGER'
     ')')
 
 
 def update_peer(peer):
     global PEER_CACHE
-    res = PEER_CACHE.get((peer['id'], peer['type']))
+    pid = peer['id']
+    res = PEER_CACHE.get(pid)
     if res:
         return peer
-    if peer['type'] == 'user':
-        CONN.execute('REPLACE INTO users (id, phone, username, first_name, last_name, flags) VALUES (?,?,?,?,?,?)', (peer['id'], peer.get('phone'), peer.get('username'), peer.get('first_name'), peer.get('last_name'), peer.get('flags')))
-        pid = peer['id']
-    elif peer['type'] == 'chat':
-        CONN.execute('REPLACE INTO chats (id, title, members_num, flags) VALUES (?,?,?,?)', (peer['id'], peer.get('title'), peer.get('members_num'), peer.get('flags')))
-        pid = -peer['id']
-    if CONN.execute('SELECT print_name FROM exportinfo WHERE id = ?', (pid,)).fetchone():
-        CONN.execute('UPDATE exportinfo SET print_name = ? WHERE id = ?', (peer.get('print_name'), pid))
+    if peer['peer_type'] == 'user':
+        CONN.execute('REPLACE INTO users VALUES (?,?,?,?,?,?,?)', (peer['peer_id'], pid, peer.get('phone'), peer.get('username'), peer.get('first_name'), peer.get('last_name'), peer.get('flags')))
+    elif peer['peer_type'] == 'chat':
+        CONN.execute('REPLACE INTO chats VALUES (?,?,?,?,?)', (peer['peer_id'], pid, peer.get('title'), peer.get('members_num'), peer.get('flags')))
+    elif peer['peer_type'] == 'channel':
+        CONN.execute('REPLACE INTO channels VALUES (?,?,?,?,?,?,?)', (peer['peer_id'], pid, peer.get('title'), peer.get('participants_count'), peer.get('admins_count'), peer.get('kicked_count'), peer.get('flags')))
+    # not support encr_chat
+    if CONN.execute('SELECT print_name FROM peerinfo WHERE permanent_id = ?', (pid,)).fetchone():
+        CONN.execute('UPDATE peerinfo SET print_name = ? WHERE permanent_id = ?', (peer.get('print_name'), pid))
     else:
-        CONN.execute('INSERT INTO exportinfo (id, print_name, finished) VALUES (?,?,?)', (pid, peer.get('print_name'), 0))
-    PEER_CACHE[(peer['id'], peer['type'])] = peer
-    # not support PEER_ENCR_CHAT
+        CONN.execute('INSERT INTO peerinfo VALUES (?,?,?,?)', (pid, peer['peer_type'], peer.get('print_name'), 0))
+    PEER_CACHE[pid] = peer
     return peer
 
 def is_finished(peer):
-    pid = peer['id'] if peer['type'] == 'user' else -peer['id']
-    res = CONN.execute('SELECT finished FROM exportinfo WHERE id = ?', (pid,)).fetchone()
+    res = CONN.execute('SELECT finished FROM peerinfo WHERE permanent_id = ?', (peer['id'],)).fetchone()
     return res and res[0]
 
 def set_finished(peer):
-    pid = peer['id'] if peer['type'] == 'user' else -peer['id']
     if not is_finished(peer):
-        CONN.execute('UPDATE exportinfo SET finished = ? WHERE id = ?', (1, pid))
+        CONN.execute('UPDATE peerinfo SET finished = ? WHERE permanent_id = ?', (1, peer['id']))
 
 def log_msg(msg):
     if 'from' in msg:
@@ -160,7 +168,7 @@ def log_msg(msg):
     ret = not CONN.execute('SELECT 1 FROM messages WHERE id = ?', (msg['id'],)).fetchone()
     # REPLACE however
     # there can be messages like {"event": "message", "id": 561865}
-    CONN.execute('REPLACE INTO messages (id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (msg['id'], getpeerid(msg, 'from'), getpeerid(msg, 'to'), msg.get('text'), json.dumps(msg['media']) if 'media' in msg else None, msg.get('date'), getpeerid(msg, 'fwd_from'), msg.get('fwd_date'), msg.get('reply_id'), msg.get('out'), msg.get('unread'), msg.get('service'), json.dumps(msg['action']) if 'action' in msg else None, msg.get('flags')))
+    CONN.execute('REPLACE INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (msg['id'], getpeerid(msg, 'from'), getpeerid(msg, 'to'), msg.get('text'), json.dumps(msg['media']) if 'media' in msg else None, msg.get('date'), getpeerid(msg, 'fwd_from'), msg.get('fwd_date'), msg.get('reply_id'), msg.get('out'), msg.get('unread'), msg.get('service'), json.dumps(msg['action']) if 'action' in msg else None, msg.get('flags')))
     return ret
 
 def process(obj):
@@ -174,11 +182,11 @@ def process(obj):
             return (True, hit)
         elif isinstance(obj, dict):
             msg = obj
-            if msg.get('event') == 'message':
+            if msg.get('event') in ('message', 'service', 'read'):
                 return (True, log_msg(msg))
             elif msg.get('event') == 'online-status':
                 update_peer(msg['user'])
-            elif msg.get('event') == 'updates' and 'deleted' in msg.get('updates', []):
+            elif 'peer' in msg:
                 update_peer(msg['peer'])
             return (None, None)
         # ignore non-json lines
@@ -245,7 +253,7 @@ def export_holes():
         purge_queue()
 
 def export_text(force=False):
-    logging.info('Exporting messages...')
+    logging.info('Getting dialogs...')
     items = TGCLI.cmd_contact_list()
     for item in items:
         update_peer(item)
@@ -256,6 +264,7 @@ def export_text(force=False):
         items = TGCLI.cmd_dialog_list(100, dcount)
         dlist.extend(items)
         dcount += 100
+    logging.info('Exporting messages...')
     failed = []
     random.shuffle(dlist)
     for item in dlist:
@@ -278,7 +287,7 @@ def export_text(force=False):
 
 DB = None
 CONN = None
-PEER_CACHE = LRUCache(5)
+PEER_CACHE = LRUCache(10)
 MSG_Q = queue.Queue()
 TGCLI = None
 DLDIR = '.'
@@ -287,7 +296,7 @@ def main(argv):
     global TGCLI, DLDIR
     parser = argparse.ArgumentParser(description="Export Telegram messages.")
     parser.add_argument("-o", "--output", help="output path", default="export")
-    parser.add_argument("-d", "--db", help="database path", default="telegram-export.db")
+    parser.add_argument("-d", "--db", help="database path", default="tg-export2.db")
     parser.add_argument("-t", "--type", help="export type, can be 'db'(default), '+avatar', '+img', '+voice'", default="db")
     parser.add_argument("-f", "--force", help="force download all messages", action='store_true')
     parser.add_argument("-e", "--tgbin", help="Telegram-cli binary path", default="bin/telegram-cli")
