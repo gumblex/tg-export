@@ -201,6 +201,12 @@ def purge_queue():
         except queue.Empty:
             break
 
+def on_start():
+    logging.info('Telegram-cli started.')
+    time.sleep(1)
+    TGCLI.cmd_dialog_list()
+
+
 def export_for(item, pos=0, force=False):
     logging.info('Exporting messages for %s from %d' % (item['print_name'], pos))
     try:
@@ -267,6 +273,8 @@ def export_text(force=False):
             break
         dlist.extend(items)
         dcount += 100
+    for item in dlist:
+        update_peer(item)
     logging.info('Exporting messages...')
     failed = []
     random.shuffle(dlist)
@@ -313,7 +321,7 @@ def main(argv):
     TGCLI.on_json = MSG_Q.put
     #TGCLI.on_info = tgcli.do_nothing
     #TGCLI.on_text = MSG_Q.put
-    #TGCLI.on_start = TGCLI.cmd_dialog_list
+    #TGCLI.on_start = on_start
     TGCLI.run()
     TGCLI.ready.wait()
 

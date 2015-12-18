@@ -142,14 +142,14 @@ class TelegramCliInterface:
         lines = data.split(b'\n', 1)
         if not lines[0].startswith(b'ANSWER '):
             if resync:
-                while not lines[0].startswith(b'ANSWER '):
+                while self.ready.is_set() and not lines[0].startswith(b'ANSWER '):
                     data = self.sock.recv(1024)
                     lines = data.split(b'\n', 1)
             else:
                 raise ValueError('Bad reply from telegram-cli: %s' % lines[0][:20])
         size = int(lines[0][7:].decode('ascii'))
         reply = lines[1] if len(lines) == 2 else b''
-        while len(reply) < size:
+        while self.ready.is_set() and len(reply) < size:
             reply += self.sock.recv(1024)
         ret = reply.decode('utf-8')
         try:
