@@ -206,6 +206,17 @@ def on_start():
     time.sleep(1)
     TGCLI.cmd_dialog_list()
 
+def logging_fmt(msg):
+    if msg.get('event') == 'message':
+        dst = msg['to']['print_name'] if 'to' in msg else '<Unknown>'
+        src = msg['from']['print_name'] if 'from' in msg else '<Unknown>'
+        return ' '.join(filter(None, (dst, src, '>>>', msg.get('text', ''), str(msg.get('media', '')))))
+    elif msg.get('event') == 'service':
+        dst = msg['to']['print_name'] if 'to' in msg else '<Unknown>'
+        src = msg['from']['print_name'] if 'from' in msg else '<Unknown>'
+        return ' '.join(filter(None, (dst, src, '>>>', str(msg.get('action', '')))))
+    else:
+        return repr(msg)[:20]
 
 def export_for(item, pos=0, force=False):
     logging.info('Exporting messages for %s from %d' % (item['print_name'], pos))
@@ -310,10 +321,9 @@ def main(argv):
     parser = argparse.ArgumentParser(description="Export Telegram messages.")
     parser.add_argument("-o", "--output", help="output path", default="export")
     parser.add_argument("-d", "--db", help="database path", default="tg-export2.db")
-    parser.add_argument("-t", "--type", help="export type, can be 'db'(default), '+avatar', '+img', '+voice'", default="db")
     parser.add_argument("-f", "--force", help="force download all messages", action='store_true')
+    parser.add_argument("-l", "--logging", help="Logging mode (keep running)", action='store_true')
     parser.add_argument("-e", "--tgbin", help="Telegram-cli binary path", default="bin/telegram-cli")
-    parser.add_argument("-i", "--image", help="Download image by message ID, can be a single ID, a file name, or - for STDIN")
     args = parser.parse_args(argv)
 
     DLDIR = args.output
@@ -326,11 +336,17 @@ def main(argv):
     #TGCLI.on_start = on_start
     TGCLI.run()
     TGCLI.ready.wait()
+    time.sleep(1)
 
     try:
-        time.sleep(1)
-        export_text(args.force)
-        export_holes()
+        if args.logging:
+            while TGCLI.ready.is_set():
+                d = MSG_Q.get()
+                logging.info(logging_fmt(d))
+                process(d)
+        else:
+            export_text(args.force)
+            export_holes()
     finally:
         TGCLI.close()
         purge_queue()
