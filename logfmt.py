@@ -317,11 +317,11 @@ DB = None
 CONN = None
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Export Telegram messages.")
+    parser = argparse.ArgumentParser(description="Format exported database file into human-readable format.")
     parser.add_argument("-o", "--output", help="output path", default="export.txt")
     parser.add_argument("-d", "--db", help="tg-export database path", default="telegram-export.db")
-    parser.add_argument("-b", "--botdb", help="tg-chatdig database path", default="")
-    parser.add_argument("-D", "--botdb-dest", help="tg-chatdig logged chat id", type=int)
+    parser.add_argument("-b", "--botdb", help="tg-chatdig bot database path", default="")
+    parser.add_argument("-D", "--botdb-dest", help="tg-chatdig bot logged chat id", type=int)
     parser.add_argument("-u", "--botdb-user", action="store_true", help="use user information in tg-chatdig database first")
     parser.add_argument("-t", "--type", help="export type, can be 'txt'(default), 'html'", default="txt")
     parser.add_argument("-p", "--peer", help="export certain peer id", type=int)
