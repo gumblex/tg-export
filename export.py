@@ -305,8 +305,8 @@ def main(argv):
     parser.add_argument("-o", "--output", help="output path", default="export")
     parser.add_argument("-d", "--db", help="database path", default="tg-export2.db")
     parser.add_argument("-f", "--force", help="force download all messages", action='store_true')
-    parser.add_argument("-l", "--logging", help="Logging mode (keep running)", action='store_true')
-    parser.add_argument("-e", "--tgbin", help="Telegram-cli binary path", default="bin/telegram-cli")
+    parser.add_argument("-l", "--logging", help="logging mode (keep running)", action='store_true')
+    parser.add_argument("-e", "--tgbin", help="telegram-cli binary path", default="bin/telegram-cli")
     args = parser.parse_args(argv)
 
     DLDIR = args.output
