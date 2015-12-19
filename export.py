@@ -216,7 +216,7 @@ def logging_fmt(msg):
         src = msg['from']['print_name'] if 'from' in msg else '<Unknown>'
         return ' '.join(filter(None, (dst, src, '>>>', str(msg.get('action', '')))))
     else:
-        return repr(msg)[:20]
+        return repr(msg)[:100]
 
 def export_for(item, pos=0, force=False):
     logging.info('Exporting messages for %s from %d' % (item['print_name'], pos))
