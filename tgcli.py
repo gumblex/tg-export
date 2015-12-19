@@ -106,6 +106,8 @@ class TelegramCliInterface:
         self.thread.start()
 
     def close(self):
+        if self.closed:
+            return
         self.ready.clear()
         self.closed = True
         try:

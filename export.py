@@ -229,6 +229,8 @@ def export_for(item, pos=0, force=False):
 
 def export_holes():
     got = set(i[0] for i in CONN.execute('SELECT id FROM messages') if isinstance(i[0], int))
+    if not got:
+        return
     holes = list(set(range(1, max(got) + 1)).difference(got))
     logging.info('Getting the remaining messages [%d-%d]...' % (min(holes), max(holes)))
     failed = []
