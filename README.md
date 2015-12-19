@@ -1,5 +1,10 @@
 # tg-export
-Export Telegram messages.
+Export Telegram messages, using [telegram-cli](https://github.com/vysheng/tg).
+
+**Note**: For compatibility with `vysheng/tg/test` branch, checkout the `tgupdate` branch.
+The database format of the new branch is not compatible with the old one, because telegram-cli
+now returns a long permanent_id string instead of an integer. If you want to export channels,
+checkout the new branch.
 
 ## export.py
 
@@ -21,6 +26,8 @@ optional arguments:
 ```
 
 ## logfmt.py
+
+This script can process database written by `export.py` or [tg-chatdig](https://github.com/gumblex/tg-chatdig).
 
 ```
 usage: logfmt.py [-h] [-o OUTPUT] [-d DB] [-b BOTDB] [-D BOTDB_DEST] [-u]
