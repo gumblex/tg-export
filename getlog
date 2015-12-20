@@ -1,0 +1,22 @@
+#!/bin/bash
+
+BOT_LOG_FILE=chatlog.db
+PEER_ID=-12345678
+PEER_TITLE='Some Interesting Group'
+CACHE_PATH=img
+URL_PREFIX=/img/
+HARD_LIMIT=100000
+
+echo 'Status: 200 OK'
+echo 'Content-Type: text/html; charset=utf-8'
+echo "Last-Modified: $(date -R -u -d @$(stat -c %Y $BOT_LOG_FILE))"
+echo
+
+if [ "$QUERY_STRING" ]; then
+    limit="$(echo "$QUERY_STRING" | tr -Cd [[:digit:],])"
+else
+    limit=500
+fi
+
+python3 logfmt.py -b $BOT_LOG_FILE -d '' -t html -D=$PEER_ID -o=- -p=$PEER_ID -P="$PEER_TITLE" -l $limit -L $HARD_LIMIT -c $CACHE_PATH -r $URL_PREFIX
+
