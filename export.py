@@ -77,6 +77,12 @@ def getpeerid(obj, key):
     if key in obj:
         return obj[key]['id']
 
+def print_id(obj):
+    try:
+        return '%s#id%d' % (obj['peer_type'], obj['peer_id'])
+    except KeyError:
+        return obj['print_name']
+
 def init_db(filename):
     global DB, CONN
     DB = sqlite3.connect(filename)
@@ -158,6 +164,9 @@ def set_finished(peer):
     if not is_finished(peer):
         CONN.execute('UPDATE peerinfo SET finished = ? WHERE permanent_id = ?', (1, peer['id']))
 
+def reset_finished():
+    CONN.execute('UPDATE peerinfo SET finished = 0')
+
 def log_msg(msg):
     if 'from' in msg:
         update_peer(msg['from'])
@@ -172,26 +181,28 @@ def log_msg(msg):
     return ret
 
 def process(obj):
-    try:
-        if isinstance(obj, list):
-            if not obj:
-                return (False, 0)
-            hit = 0
-            for msg in obj:
-                hit += log_msg(msg)
-            return (True, hit)
-        elif isinstance(obj, dict):
-            msg = obj
-            if msg.get('event') in ('message', 'service', 'read'):
-                return (True, log_msg(msg))
-            elif msg.get('event') == 'online-status':
-                update_peer(msg['user'])
-            elif 'peer' in msg:
-                update_peer(msg['peer'])
-            return (None, None)
+    if isinstance(obj, list):
+        if not obj:
+            return (False, 0)
+        hit = 0
+        for msg in obj:
+            hit += log_msg(msg)
+        return (True, hit)
+    elif isinstance(obj, dict):
+        msg = obj
+        if msg.get('event') in ('message', 'service', 'read'):
+            return (True, log_msg(msg))
+        elif msg.get('event') == 'online-status':
+            update_peer(msg['user'])
+        elif 'peer' in msg:
+            update_peer(msg['peer'])
+        elif msg.get('result') == 'FAIL':
+            if 'can not parse' in msg.get('error', ''):
+                TGCLI.cmd_dialog_list()
+                #raise ValueError(msg.get('error'))
+            return (False, 0)
+        return (None, None)
         # ignore non-json lines
-    except Exception as ex:
-        logging.exception('Failed to process a line of result: ' + ln)
     return (None, None)
 
 def purge_queue():
@@ -203,8 +214,9 @@ def purge_queue():
 
 def on_start():
     logging.info('Telegram-cli started.')
-    time.sleep(1)
+    time.sleep(2)
     TGCLI.cmd_dialog_list()
+    logging.info('Telegram-cli is ready.')
 
 def logging_fmt(msg):
     if msg.get('event') == 'message':
@@ -218,61 +230,56 @@ def logging_fmt(msg):
     else:
         return repr(msg)[:100]
 
+def logging_status(pos, end=False):
+    if pos % 1000:
+        sys.stdout.write('.')
+    elif pos:
+        sys.stdout.write(str(pos))
+    if end and pos > 100:
+        if pos % 1000:
+            sys.stdout.write('%d\n' % pos)
+        else:
+            sys.stdout.write('\n')
+    sys.stdout.flush()
+
 def export_for(item, pos=0, force=False):
     logging.info('Exporting messages for %s from %d' % (item['print_name'], pos))
     try:
         if not pos:
             update_peer(item)
-            res = process(TGCLI.send_command('history %s 100' % item['print_name']))
+            msglist = TGCLI.cmd_history(print_id(item), 100)
+            res = process(msglist)
+            logging_status(pos)
             pos = 100
         else:
             res = (True, 0)
         finished = not force and is_finished(item)
         while res[0] is True and not (finished and res[1]):
-            res = process(TGCLI.send_command('history %s 100 %d' % (item['print_name'], pos)))
+            msglist = TGCLI.cmd_history(print_id(item), 100, pos)
+            res = process(msglist)
+            logging_status(pos)
             pos += 100
-    except (socket.timeout, ValueError):
+    except socket.timeout:
+        logging_status(pos, True)
+        return pos
+    except BrokenPipeError:
+        logging_status(pos, True)
+        logging.warning('Failed to get messages for %s, restarting...' % item['print_name'])
+        TGCLI.restart()
         return pos
     except Exception:
-        logging.exception('Failed to get messages for ' + item['print_name'])
+        logging_status(pos, True)
+        logging.exception('Failed to get messages for %s from %d' % (item['print_name'], pos))
         return pos
+    logging_status(pos, True)
     set_finished(item)
-
-def export_holes():
-    got = set(i[0] for i in CONN.execute('SELECT id FROM messages') if isinstance(i[0], int))
-    if not got:
-        return
-    holes = list(set(range(1, max(got) + 1)).difference(got))
-    logging.info('Getting the remaining messages [%d-%d]...' % (min(holes), max(holes)))
-    failed = []
-    # we need some uncertainty to work around the uncertainty of telegram-cli
-    random.shuffle(holes)
-    for mid in holes:
-        try:
-            res = process(TGCLI.send_command('get_message %d' % mid))
-            if not res[0]:
-                logging.warning('ID %d may not exist' % mid)
-        except (socket.timeout, ValueError):
-            failed.append(mid)
-        except Exception:
-            failed.append(mid)
-            logging.exception('Failed to get message ID %d' % mid)
-    purge_queue()
-    while failed:
-        logging.info('Retrying the remaining messages [%d-%d]...' % (min(failed), max(failed)))
-        newlist = []
-        # see above
-        random.shuffle(failed)
-        for mid in failed:
-            try:
-                res = process(TGCLI.send_command('get_message %d' % mid))
-            except Exception:
-                failed.append(mid)
-        failed = newlist
-        purge_queue()
+    #logging.info('Exported messages for %s to %d' % (item['print_name'], pos))
 
 def export_text(force=False):
+    if force:
+        reset_finished()
     logging.info('Getting contacts...')
+    update_peer(TGCLI.cmd_get_self())
     items = TGCLI.cmd_contact_list()
     for item in items:
         update_peer(item)
@@ -299,6 +306,7 @@ def export_text(force=False):
         purge_queue()
     DB.commit()
     while failed:
+        #TGCLI.restart()
         newlist = []
         for key, item in enumerate(failed):
             res = export_for(item[0], item[1], force)
@@ -329,11 +337,11 @@ def main(argv):
     DLDIR = args.output
     init_db(args.db)
 
-    TGCLI = tgcli.TelegramCliInterface(args.tgbin, run=False)
+    TGCLI = tgcli.TelegramCliInterface(args.tgbin, run=False, timeout=15)
     TGCLI.on_json = MSG_Q.put
     #TGCLI.on_info = tgcli.do_nothing
     #TGCLI.on_text = MSG_Q.put
-    #TGCLI.on_start = on_start
+    TGCLI.on_start = on_start
     TGCLI.run()
     TGCLI.ready.wait()
     time.sleep(1)
@@ -346,7 +354,6 @@ def main(argv):
                 process(d)
         else:
             export_text(args.force)
-            export_holes()
     finally:
         TGCLI.close()
         purge_queue()
