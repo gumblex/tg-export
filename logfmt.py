@@ -14,6 +14,7 @@ import collections
 import jinja2
 
 re_url = re.compile(r'(?i)\b((?:[a-z][\w-]+:(?:/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:\'".,<>?«»“”‘’]))', re.I)
+re_limit = re.compile(r'^([0-9]+)(,[0-9]+)?$')
 imgfmt = frozenset(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'))
 
 printname = lambda first, last='': (first + ' ' + last if last else first) or '<Unknown>'
@@ -47,82 +48,66 @@ unkmsg = lambda mid: {
     'flags': 0
 }
 
-def rangetosql(s):
-    if s in ':':
-        return ''
-    sp = s.split(':')
-    if len(sp) == 1:
-        index = int(sp[0])
-        if index < 0:
-            return 'LIMIT 1 OFFSET count(*)' + sp[0]
-        else:
-            return 'LIMIT 1 OFFSET ' + sp[0]
-    elif len(sp) == 2:
-        if not sp[0] and not sp[1]:
-            return ''
-        offset, limit = '0', '-1'
-        start, end = None, None
-        if sp[0]:
-            start = int(sp[0])
-            if start < 0:
-                offset = 'count(*)-%d' % abs(start)
-            else:
-                offset = sp[0]
-        if sp[1]:
-            end = int(sp[1])
-            if end < 0:
-                if start is None:
-                    limit = 'count(*)%+d' % end
-                elif start < 0:
-                    limit = str(end - start)
-                else:
-                    limit = 'count(*)-%d' % (end - start)
-            else:
-                if start is None:
-                    limit = sp[1]
-                elif start < 0:
-                    limit = '%d-count(*)' % (end - start)
-                else:
-                    limit = str(end - start)
-        return 'LIMIT %s OFFSET %s' % (limit, offset)
-    else:
-        raise ValueError('step is not supported')
+class LRUCache:
 
-def _test_rangetosql():
-    def evalrts(lst, pos1, pos2):
-        expr = '%s:%s' % ('' if pos1 is None else pos1, '' if pos2 is None else pos2)
-        ret = rangetosql(expr) or 'LIMIT 0 OFFSET -1'
-        limit, offset = ret[6:].replace('count(*)', 'n').split(' OFFSET ')
-        n = len(lst)
-        expect = lst[pos1:pos2]
-        off = eval(offset)
-        end = None if limit == '-1' else off+eval(limit)
-        assert lst[off:end] == expect
-    s = ''.join(map(chr, range(32, 127)))
-    n = len(s)
-    for i in range(-n, n):
-        pos1 = n - i if i < 0 else i
-        for j in range(-n, n):
-            pos2 = n - j if j < 0 else j
-            if pos1 <= pos2:
-                evalrts(s, pos1, pos2)
-                evalrts(s, None, pos2)
-        evalrts(s, pos1, None)
+    def __init__(self, maxlen):
+        self.capacity = maxlen
+        self.cache = collections.OrderedDict()
+
+    def __getitem__(self, key):
+        value = self.cache.pop(key)
+        self.cache[key] = value
+        return value
+
+    def get(self, key, default=None):
+        try:
+            value = self.cache.pop(key)
+            self.cache[key] = value
+            return value
+        except KeyError:
+            return default
+
+    def __setitem__(self, key, value):
+        try:
+            self.cache.pop(key)
+        except KeyError:
+            if len(self.cache) >= self.capacity:
+                self.cache.popitem(last=False)
+        self.cache[key] = value
+
+class StreamArray(list):
+    def __init__(self, iterable):
+        self.iterable = iterable
+
+    def __iter__(self):
+        return self.iterable
+
+    # according to the comment below
+    def __len__(self):
+        return 1
 
 class Messages:
 
-    def __init__(self, isbotdb=False):
+    def __init__(self, stream=False, template='history.txt'):
         self.peers = collections.defaultdict(unkpeer)
-        self.range = None
-        self.msgs = {}
+        if stream:
+            self.msgs = LRUCache(100)
+        else:
+            self.msgs = collections.OrderedDict()
+
         self.db_cli = None
         self.conn_cli = None
         self.db_bot = None
         self.conn_bot = None
+
+        self.limit = None
+        self.hardlimit = None
         self.botdest = None
-        self.isbotdb = isbotdb
-        self.dialogs = collections.defaultdict(set)
-        self.template = 'history.txt'
+
+        self.template = template
+        self.stream = stream
+        self.cachedir = None
+        self.urlprefix = None
         self.jinjaenv = jinja2.Environment(loader=jinja2.FileSystemLoader('templates'))
         self.jinjaenv.filters['strftime'] = strftime
         self.jinjaenv.filters['autolink'] = autolink
@@ -143,15 +128,27 @@ class Messages:
         else:
             raise FileNotFoundError('Database not found: ' + filename)
 
-    def msgfromdb(self, dbtype='cli'):
-        limit = ' ' + rangetosql(self.range) if self.range else ''
+    def msgfromdb(self, dbtype='cli', peer=None):
+        if self.limit:
+            match = re_limit.match(self.limit)
+            if match:
+                if match.group(2):
+                    limit = 'LIMIT %d OFFSET %s' % (min(int(match.group(1)), self.hardlimit), match.group(2)[1:])
+                else:
+                    limit = 'LIMIT %d' % min(int(match.group(1)), self.hardlimit)
+            else:
+                limit = 'LIMIT %d' % self.hardlimit
+        else:
+            limit = ''
         if dbtype == 'cli':
-            for row in self.conn_cli.execute('SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages ORDER BY id ASC' + limit):
+            if peer:
+                where = 'WHERE src=%d or dest=%d' % (peer, peer)
+            for row in self.conn_cli.execute('SELECT * FROM (SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages %s ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % (where, limit)):
                 yield row
         elif dbtype == 'bot' and self.botdest:
-            for mid, src, text, media, date, fwd_src, fwd_date, reply_id in self.conn_bot.execute('SELECT id, src, text, media, date, fwd_src, fwd_date, reply_id FROM messages ORDER BY date ASC, id ASC' + limit):
-                service, action = self.media_bot2cli(text, media)
-                yield mid, src, self.botdest, text, media, date, fwd_src, fwd_date, reply_id, 0, 0, service, action, 256
+            for mid, src, text, media, date, fwd_src, fwd_date, reply_id in self.conn_bot.execute('SELECT * FROM (SELECT id, src, text, media, date, fwd_src, fwd_date, reply_id FROM messages ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % limit):
+                media, action = self.media_bot2cli(text, media)
+                yield mid, src, self.botdest, text, media, date, fwd_src, fwd_date, reply_id, 0, 0, bool(action), action, 256
         else:
             raise ValueError('dbtype or self.botdest is invalid')
 
@@ -185,16 +182,38 @@ class Messages:
                     'print': printname(first_name, last_name)
                 })
 
-    def media_bot2cli(self, text, media=None):
+    def media_bot2cli(self, text, media=None, strict=False):
         if not media:
             return None, None
         media = json.loads(media)
         dm = {}
         da = {}
+
+        mt = None
+        if self.cachedir:
+            mt = media.keys() & frozenset(('audio', 'document', 'sticker', 'video', 'voice'))
+            file_id = None
+            if mt:
+                mt = mt.pop()
+                file_id = media[mt]['file_id']
+            elif 'photo' in media:
+                file_id = max(media['photo'], key=lambda x: x['width'])['file_id']
+            if file_id:
+                for fn in os.listdir(self.cachedir):
+                    if fn.startswith(file_id):
+                        dm['url'] = self.urlprefix + fn
+                        break
+
+        if '_ircuser' in media:
+            dm['_ircuser'] = media['_ircuser']
+
         if ('audio' in media or 'document' in media
             or 'sticker' in media or 'video' in media
             or 'voice' in media):
-            dm['type'] = 'document'
+            if strict:
+                dm['type'] = 'document'
+            else:
+                dm['type'] = mt or 'document'
         elif 'photo' in media:
             dm['type'] = 'photo'
             dm['caption'] = text or ''
@@ -228,10 +247,9 @@ class Messages:
             da['title'] = ''
         return json.dumps(dm) if dm else None, json.dumps(da) if da else None
 
-
-
-    def getmsgs(self):
-        for mid, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags in self.msgfromdb('cli' if self.db_cli else 'bot'):
+    def getmsgs(self, peer=None):
+        db = 'cli' if self.db_cli else 'bot'
+        for mid, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags in self.msgfromdb(db, peer):
             if fwd_src:
                 msgtype = 'fwd'
                 extra = {'fwd_src': self.peers[fwd_src], 'fwd_date': fwd_date}
@@ -241,9 +259,12 @@ class Messages:
             else:
                 msgtype, extra = '', None
             media = json.loads(media or '{}')
+            src = self.peers[src]
+            if db == 'bot' and '_ircuser' in media:
+                src['first_name'] = src['print'] = media['_ircuser']
             msg = {
                 'mid': mid,
-                'src': self.peers[src],
+                'src': src,
                 'dest': self.peers[dest],
                 'text': text or media.get('caption'),
                 'media': media,
@@ -257,34 +278,58 @@ class Messages:
                 'flags': flags
             }
             self.msgs[mid] = msg
-            if out or dest and dest < 0:
-                self.dialogs[dest].add(mid)
-            elif src:
-                self.dialogs[src].add(mid)
+            if db == 'cli':
+                if dest == peer and (out or dest and dest < 0):
+                    yield mid, msg
+                elif src == peer:
+                    yield mid, msg
+            else:
+                yield mid, msg
 
-    def render_peer(self, pid):
-        msgs = tuple(self.msgs[m] for m in sorted(self.msgs.keys()) if m in self.dialogs[pid])
-        start = min(msgs, key=operator.itemgetter('date'))['date']
-        end = max(msgs, key=operator.itemgetter('date'))['date']
+    def render_peer(self, pid, name=None):
+        peer = self.peers[pid].copy()
+        if name:
+            peer['print'] = name
         kvars = {
-            'msgs': msgs,
-            'peer': self.peers[pid],
-            'gentime': time.time(),
-            'start': start,
-            'end': end,
-            'count': len(msgs)
+            'peer': peer,
+            'gentime': time.time()
         }
+        if self.stream:
+            kvars['msgs'] = (m for k, m in self.getmsgs(pid))
+        else:
+            msgs = tuple(m for k, m in self.getmsgs(pid))
+            kvars['msgs'] = msgs
+            kvars['start'] = min(msgs, key=operator.itemgetter('date'))['date']
+            kvars['end'] = max(msgs, key=operator.itemgetter('date'))['date']
+            kvars['count'] = len(msgs)
         template = self.jinjaenv.get_template(self.template)
-        return template.render(**kvars)
+        yield from template.stream(**kvars)
+
+    def render_peer_json(self, pid, name=None):
+        je = json.JSONEncoder()
+        peer = self.peers[pid].copy()
+        if name:
+            peer['print'] = name
+        kvars = {
+            'peer': peer,
+            'gentime': time.time()
+        }
+        kvars['msgs'] = StreamArray(m for k, m in self.getmsgs(pid))
+        yield from je.iterencode(kvars)
 
 def autolink(text, img=True):
-    match = re_url.search(text)
-    if not match:
-        return text
-    if img and os.path.splitext(match.group(1))[1] in imgfmt:
-        return match.expand('<a href="\1"><img src="\1"></a>')
-    else:
-        return match.expand('<a href="\1">\1</a>')
+    ret = []
+    lastpos = 0
+    for match in re_url.finditer(text):
+        start, end = match.span()
+        url = text[start:end]
+        if img and os.path.splitext(url)[1] in imgfmt:
+            ret.append('%s<a href="%s"><img src="%s"></a>' % (text[lastpos:start], url, url))
+        else:
+            ret.append('%s<a href="%s">%s</a>' % (text[lastpos:start], url, url))
+        lastpos = end
+    ret.append(text[lastpos:])
+    return ''.join(ret)
 
 def smartname(user, limit=20):
     if 'first_name' not in user:
@@ -309,22 +354,36 @@ def main(argv):
     parser.add_argument("-b", "--botdb", help="tg-chatdig bot database path", default="")
     parser.add_argument("-D", "--botdb-dest", help="tg-chatdig bot logged chat id", type=int)
     parser.add_argument("-u", "--botdb-user", action="store_true", help="use user information in tg-chatdig database first")
-    parser.add_argument("-t", "--type", help="export type, can be 'txt'(default), 'html'", default="txt")
+    parser.add_argument("-t", "--type", help="export type, can be 'txt'(default), 'html', 'json'", default="txt")
     parser.add_argument("-p", "--peer", help="export certain peer id", type=int)
-    parser.add_argument("-r", "--range", help="message range in slice format")
+    parser.add_argument("-P", "--peer-print", help="set print name for the peer")
+    parser.add_argument("-l", "--limit", help="limit the number of fetched messages and set the offset")
+    parser.add_argument("-L", "--hardlimit", help="set a hard limit of the number of messages, must be used with -l", type=int, default=100000)
+    parser.add_argument("-c", "--cachedir", help="the path of media files")
+    parser.add_argument("-r", "--urlprefix", help="the url prefix of media files")
     args = parser.parse_args(argv)
 
-    msg = Messages()
-    msg.range = args.range
+    msg = Messages(stream=(args.type == 'html'))
+    msg.limit = args.limit
+    msg.hardlimit = args.hardlimit
+    msg.cachedir = args.cachedir
+    msg.urlprefix = args.urlprefix
+    render_func = msg.render_peer
     if args.type == 'html':
         msg.template = 'simple.html'
+    elif args.type == 'json':
+        render_func = msg.render_peer_json
     if args.db:
         msg.init_db(args.db, 'cli')
     if args.botdb:
-        msg.init_db(args.botdb, 'bot', args.botdb_user, args.botdb_dest)
-    msg.getmsgs()
-    with open(args.output, 'w') as f:
-        f.write(msg.render_peer(args.peer))
+        msg.init_db(args.botdb, 'bot', args.botdb_user or not args.db, args.botdb_dest)
+    if args.output == '-':
+        for ln in render_func(args.peer, args.peer_print):
+            sys.stdout.write(ln)
+    else:
+        with open(args.output, 'w') as f:
+            for ln in render_func(args.peer, args.peer_print):
+                f.write(ln)
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))

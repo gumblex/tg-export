@@ -9,7 +9,9 @@ td {padding: 0; vertical-align: baseline;}
 .a, .a:hover, .a:active, .a:focus, .a:visited {color: inherit}
 .r {text-align: right}
 .t {width: 100%; white-space: normal}
-img {border: 0; max-width: 50%}
+img, video {border: 0; vertical-align: text-top}
+img {max-width: 400px; max-height: 300px}
+.sticker {max-width: 192px; max-height: 192px}
 :target {background-color: #ffa}
 </style>
 </head>
@@ -22,17 +24,21 @@ img {border: 0; max-width: 50%}
 <td class="r"><a href="#m{{ msg.mid }}" class="a">{{ msg.date|strftime('%Y-%m-%d %H:%M:%S') }}</a></td>
 <td class="r" title="{{ msg.src.print|escape }}">{{ msg.src|smartname|escape }}:</td>
 <td class="t">{% if msg.msgtype == 'fwd' -%}
-<i><b>Fwd</b> {{ msg.extra.fwd_src|smartname|escape }}:</i>
+    <i><b>Fwd</b> {{ msg.extra.fwd_src|smartname|escape }}:</i>
 {%- elif msg.msgtype == 're' -%}
-<i><a href="#m{{ msg.extra.reply.mid }}">{{ msg.extra.reply.src|smartname|escape }}</a>:</i>
+    <i><a href="#m{{ msg.extra.reply.mid }}">{{ msg.extra.reply.src|smartname|escape }}</a>:</i>
 {%- endif %}
-{% if msg.text %}{{ msg.text|escape|autolink|replace("\n", "<br>") }}{% endif %}
+{% if msg.text -%}
+    {{ msg.text|escape|autolink|replace("\n", "<br>") }}
+{%- endif %}
 {% if msg.media -%}
     {% if msg.media.url -%}
         {% if msg.media.type == 'photo' -%}
-            <a href="{{ msg.media.url }}"><img src="{{ msg.media.url }}"></a>
+            {% if msg.text or msg.msgtype %}<br>
+            {%- endif %}<a href="{{ msg.media.url }}"><img src="{{ msg.media.url }}"></a>
         {%- elif msg.media.type == 'sticker' -%}
-            <img src="{{ msg.media.url }}">
+            {% if msg.msgtype %}<br>
+            {%- endif %}<img class="sticker" src="{{ msg.media.url }}">
         {%- elif msg.media.type in ('audio', 'voice') -%}
             <audio src="{{ msg.media.url }}" controls><i>[<a href="{{ msg.media.url }}">{{ msg.media.type }}</a>]</i></audio>
         {%- elif msg.media.type == 'video' -%}
@@ -44,14 +50,15 @@ img {border: 0; max-width: 50%}
         {%- endif %}
     {%- elif msg.media.type in ('contact', 'geo', 'location') -%}
         <i>[{{ msg.media|string|escape }}]</i>
-    {%- else -%}
+    {%- elif '_ircuser' in msg.media -%}
+        <i>[IRC]</i>
+    {%- else %}
         <i>[{{ msg.media.type }}]</i>
     {%- endif %}
-{%- endif %}
-{% if msg.service -%}
+{%- endif %}{% if msg.service -%}
     <i>[{{ msg.action.type }}]</i>
     {% if msg.action.type in ('chat_created', 'chat_rename') -%}
-        <b>{{ msg.action.title }}</b>
+        <b>{{ msg.action.title|escape|autolink }}</b>
     {%- elif msg.action.type in ('chat_add_user', 'chat_del_user') -%}
         <b>{{ msg.action.user.print }}</b>
     {%- endif %}
@@ -61,3 +68,4 @@ img {border: 0; max-width: 50%}
 </tbody>
 </body>
 </html>
+
