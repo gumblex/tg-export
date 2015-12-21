@@ -9,7 +9,7 @@ td {padding: 0; vertical-align: baseline;}
 .a, .a:hover, .a:active, .a:focus, .a:visited {color: inherit}
 .r {text-align: right}
 .t {width: 100%; white-space: normal}
-img, video {border: 0; vertical-align: text-top}
+img, video, audio {border: 0; vertical-align: text-top}
 img {max-width: 400px; max-height: 300px}
 .sticker {max-width: 192px; max-height: 192px}
 :target {background-color: #ffa}
@@ -40,9 +40,11 @@ img {max-width: 400px; max-height: 300px}
             {% if msg.msgtype %}<br>
             {%- endif %}<img class="sticker" src="{{ msg.media.url }}">
         {%- elif msg.media.type in ('audio', 'voice') -%}
-            <audio src="{{ msg.media.url }}" controls><i>[<a href="{{ msg.media.url }}">{{ msg.media.type }}</a>]</i></audio>
+            {% if msg.msgtype %}<br>
+            {%- endif %}<audio src="{{ msg.media.url }}" controls><i>[<a href="{{ msg.media.url }}">{{ msg.media.type }}</a>]</i></audio>
         {%- elif msg.media.type == 'video' -%}
-            <video src="{{ msg.media.url }}" controls><i>[<a href="{{ msg.media.url }}">{{ msg.media.type }}</a>]</i></video>
+            {% if msg.msgtype %}<br>
+            {%- endif %}<video src="{{ msg.media.url }}" controls><i>[<a href="{{ msg.media.url }}">{{ msg.media.type }}</a>]</i></video>
         {%- elif msg.media.type == 'document' -%}
             <i>[<a href="{{ msg.media.url }}">{{ msg.media.file_name|escape }}</a>, {{ msg.media.file_size|d(0)|filesizeformat }}, {{ msg.media.mime_type|d('application/octet-stream') }}]</i>
         {%- else -%}

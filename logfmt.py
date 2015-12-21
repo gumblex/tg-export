@@ -354,7 +354,7 @@ def main(argv):
     parser.add_argument("-b", "--botdb", help="tg-chatdig bot database path", default="")
     parser.add_argument("-D", "--botdb-dest", help="tg-chatdig bot logged chat id", type=int)
     parser.add_argument("-u", "--botdb-user", action="store_true", help="use user information in tg-chatdig database first")
-    parser.add_argument("-t", "--type", help="export type, can be 'txt'(default), 'html', 'json'", default="txt")
+    parser.add_argument("-t", "--template", help="export template, can be 'txt'(default), 'html', 'json', or template file name", default="txt")
     parser.add_argument("-p", "--peer", help="export certain peer id", type=int)
     parser.add_argument("-P", "--peer-print", help="set print name for the peer")
     parser.add_argument("-l", "--limit", help="limit the number of fetched messages and set the offset")
@@ -363,16 +363,20 @@ def main(argv):
     parser.add_argument("-r", "--urlprefix", help="the url prefix of media files")
     args = parser.parse_args(argv)
 
-    msg = Messages(stream=(args.type == 'html'))
+    msg = Messages(stream=args.template.endswith('html'))
     msg.limit = args.limit
     msg.hardlimit = args.hardlimit
     msg.cachedir = args.cachedir
     msg.urlprefix = args.urlprefix
     render_func = msg.render_peer
-    if args.type == 'html':
+    if args.template == 'html':
         msg.template = 'simple.html'
-    elif args.type == 'json':
+    elif args.template == 'txt':
+        msg.template = 'history.txt'
+    elif args.template == 'json':
         render_func = msg.render_peer_json
+    else:
+        msg.template = args.template
     if args.db:
         msg.init_db(args.db, 'cli')
     if args.botdb:
