@@ -7,6 +7,14 @@ CACHE_PATH=img
 URL_PREFIX=/img/
 HARD_LIMIT=100000
 
+if [ "$HTTP_IF_MODIFIED_SINCE" ]; then
+    if [ "$(date -u -d "$HTTP_IF_MODIFIED_SINCE" +%s)" -ge "$(stat -c %Y $BOT_LOG_FILE)" ]; then
+        echo 'Status: 304 Not Modified'
+        echo
+        exit 0
+    fi
+fi
+
 echo 'Status: 200 OK'
 echo 'Content-Type: text/html; charset=utf-8'
 echo "Last-Modified: $(date -R -u -d @$(stat -c %Y $BOT_LOG_FILE))"
