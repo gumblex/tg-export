@@ -2,5 +2,5 @@
 From {{ start|strftime('%Y-%m-%d %H:%M:%S') }} to {{ end|strftime('%Y-%m-%d %H:%M:%S') }}, total {{ count }}
 {% for msg in msgs %}[{{ msg.date|strftime('%Y-%m-%d %H:%M:%S') }}] {{ msg.src.print }}{% if msg.msgtype == 'fwd' %} [Fwd: {{ msg.extra.fwd_src.print }}]
 {%- elif msg.msgtype == 're' %} [Re: {{ msg.extra.reply.mid }}]
-{%- endif %} >>>{% if msg.text %} {{ msg.text }}{% endif %}{% if msg.media %} [{{ msg.media.type }}]{% endif %}{% if msg.service %} [{{ msg.action.type }}]{% endif %}
+{%- endif %} >>>{% if msg.text %} {{ msg.text }}{% endif %}{% if msg.media %} [{{ msg.media.type|d('IRC') }}]{% endif %}{% if msg.service %} [{{ msg.action.type }}]{% endif %}
 {% endfor %}
