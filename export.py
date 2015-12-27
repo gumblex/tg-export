@@ -6,13 +6,10 @@ import sys
 import json
 import time
 import queue
-import base64
 import random
-import socket
 import sqlite3
 import logging
 import argparse
-import binascii
 import functools
 import collections
 
@@ -259,12 +256,6 @@ def export_for(item, pos=0, force=False):
             res = process(msglist)
             logging_status(pos)
             pos += 100
-    except socket.timeout:
-        logging_status(pos, True)
-        return pos
-    except BrokenPipeError:
-        logging_status(pos, True)
-        return pos
     except Exception:
         logging_status(pos, True)
         return pos
