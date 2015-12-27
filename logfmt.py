@@ -111,6 +111,7 @@ class Messages:
         self.jinjaenv = jinja2.Environment(loader=jinja2.FileSystemLoader('templates'))
         self.jinjaenv.filters['strftime'] = strftime
         self.jinjaenv.filters['autolink'] = autolink
+        self.jinjaenv.filters['isimg'] = lambda url: os.path.splitext(url)[1] in imgfmt
         self.jinjaenv.filters['smartname'] = smartname
 
     def init_db(self, filename, dbtype='cli', botuserdb=False, botdest=None):

@@ -5,7 +5,7 @@
 <title>{{ peer.print|escape }}</title>
 <style>
 table {white-space: nowrap; width: 100%; border-spacing: 4px; border-collapse: separate}
-td {padding: 0; vertical-align: baseline;}
+td {padding: 0; vertical-align: baseline; word-wrap: break-word; word-break: break-all}
 .a, .a:hover, .a:active, .a:focus, .a:visited {color: inherit}
 .r {text-align: right}
 .t {width: 100%; white-space: normal}
@@ -16,7 +16,7 @@ img {max-width: 400px; max-height: 300px}
 </style>
 </head>
 <body>
-<table style="white-space: nowrap; width: 100%" cellpadding="0" cellspacing="4">
+<table>
 <thead><tr><th>Time</th><th>From</th><th>Message</th></tr></thead>
 <tbody>
 {% for msg in msgs -%}
@@ -46,7 +46,7 @@ img {max-width: 400px; max-height: 300px}
             {% if msg.msgtype %}<br>
             {%- endif %}<video src="{{ msg.media.url }}" controls><i>[<a href="{{ msg.media.url }}">{{ msg.media.type }}</a>]</i></video>
         {%- elif msg.media.type == 'document' -%}
-            <i>[<a href="{{ msg.media.url }}">{{ msg.media.file_name|escape }}</a>, {{ msg.media.file_size|d(0)|filesizeformat }}, {{ msg.media.mime_type|d('application/octet-stream') }}]</i>
+            <i>[{% if msg.media.file_name %}{{ msg.media.file_name|escape }}, {% endif %}{% if msg.media.file_size %}{{ msg.media.file_size|d(0)|filesizeformat }}, {% endif %}{{ msg.media.mime_type|d('application/octet-stream') }}]</i> {% if msg.media.url|isimg %}<br><a href="{{ msg.media.url }}"><img src="{{ msg.media.url }}"></a>{% else %}<a href="{{ msg.media.url }}">{{ msg.media.file_name|d('file')|escape }}</a>{% endif %}
         {%- else -%}
             <i>[{{ msg.media.type }}]</i>
         {%- endif %}
