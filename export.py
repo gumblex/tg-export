@@ -235,7 +235,7 @@ def logging_status(pos, end=False):
         sys.stdout.write('.')
     elif pos:
         sys.stdout.write(str(pos))
-    if end and pos > 100:
+    if end and pos:
         if pos % 1000:
             sys.stdout.write('%d\n' % pos)
         else:
@@ -264,16 +264,12 @@ def export_for(item, pos=0, force=False):
         return pos
     except BrokenPipeError:
         logging_status(pos, True)
-        logging.warning('Failed to get messages for %s, restarting...' % item['print_name'])
-        TGCLI.restart()
         return pos
     except Exception:
         logging_status(pos, True)
-        logging.exception('Failed to get messages for %s from %d' % (item['print_name'], pos))
         return pos
     logging_status(pos, True)
     set_finished(item)
-    #logging.info('Exported messages for %s to %d' % (item['print_name'], pos))
 
 def export_text(force=False):
     if force:
@@ -337,11 +333,11 @@ def main(argv):
     DLDIR = args.output
     init_db(args.db)
 
-    TGCLI = tgcli.TelegramCliInterface(args.tgbin, run=False, timeout=15)
+    TGCLI = tgcli.TelegramCliInterface(args.tgbin, extra_args=('-W',), run=False, timeout=30)
     TGCLI.on_json = MSG_Q.put
     #TGCLI.on_info = tgcli.do_nothing
     #TGCLI.on_text = MSG_Q.put
-    TGCLI.on_start = on_start
+    #TGCLI.on_start = on_start
     TGCLI.run()
     TGCLI.ready.wait()
     time.sleep(1)
