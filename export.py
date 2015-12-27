@@ -312,7 +312,7 @@ def main(argv):
     DLDIR = args.output
     init_db(args.db)
 
-    TGCLI = tgcli.TelegramCliInterface(args.tgbin, run=False)
+    TGCLI = tgcli.TelegramCliInterface(args.tgbin, extra_args=('-W',), run=False)
     TGCLI.on_json = MSG_Q.put
     #TGCLI.on_info = tgcli.do_nothing
     #TGCLI.on_text = MSG_Q.put
