@@ -299,6 +299,7 @@ def export_text(force=False):
             res = export_for(item[0], item[1], force)
             if res is not None:
                 newlist.append((item[0], res))
+                logging.warning('Failed to get messages for %s from %d' % (item['print_name'], res))
             purge_queue()
         failed = newlist
     DB.commit()
