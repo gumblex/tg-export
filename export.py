@@ -295,10 +295,10 @@ def export_text(force=False):
     while failed:
         #TGCLI.restart()
         newlist = []
-        for key, item in enumerate(failed):
-            res = export_for(item[0], item[1], force)
+        for item, pos in failed:
+            res = export_for(item, pos, force)
             if res is not None:
-                newlist.append((item[0], res))
+                newlist.append((item, res))
                 logging.warning('Failed to get messages for %s from %d' % (item['print_name'], res))
             purge_queue()
         failed = newlist
