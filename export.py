@@ -150,6 +150,9 @@ def set_finished(peer):
     if not is_finished(peer):
         CONN.execute('UPDATE exportinfo SET finished = ? WHERE id = ?', (1, pid))
 
+def reset_finished():
+    CONN.execute('UPDATE exportinfo SET finished = 0')
+
 def log_msg(msg):
     if 'from' in msg:
         update_peer(msg['from'])
@@ -164,26 +167,23 @@ def log_msg(msg):
     return ret
 
 def process(obj):
-    try:
-        if isinstance(obj, list):
-            if not obj:
-                return (False, 0)
-            hit = 0
-            for msg in obj:
-                hit += log_msg(msg)
-            return (True, hit)
-        elif isinstance(obj, dict):
-            msg = obj
-            if msg.get('event') == 'message':
-                return (True, log_msg(msg))
-            elif msg.get('event') == 'online-status':
-                update_peer(msg['user'])
-            elif msg.get('event') == 'updates' and 'deleted' in msg.get('updates', []):
-                update_peer(msg['peer'])
-            return (None, None)
+    if isinstance(obj, list):
+        if not obj:
+            return (False, 0)
+        hit = 0
+        for msg in obj:
+            hit += log_msg(msg)
+        return (True, hit)
+    elif isinstance(obj, dict):
+        msg = obj
+        if msg.get('event') == 'message':
+            return (True, log_msg(msg))
+        elif msg.get('event') == 'online-status':
+            update_peer(msg['user'])
+        elif msg.get('event') == 'updates' and 'deleted' in msg.get('updates', []):
+            update_peer(msg['peer'])
+        return (None, None)
         # ignore non-json lines
-    except Exception as ex:
-        logging.exception('Failed to process a line of result: ' + ln)
     return (None, None)
 
 def purge_queue():
@@ -205,24 +205,39 @@ def logging_fmt(msg):
     else:
         return repr(msg)[:100]
 
+def logging_status(pos, end=False):
+    if pos % 1000:
+        sys.stdout.write('.')
+    elif pos:
+        sys.stdout.write(str(pos))
+    if end and pos > 100:
+        if pos % 1000:
+            sys.stdout.write('%d\n' % pos)
+        else:
+            sys.stdout.write('\n')
+    sys.stdout.flush()
+
 def export_for(item, pos=0, force=False):
     logging.info('Exporting messages for %s from %d' % (item['print_name'], pos))
     try:
         if not pos:
             update_peer(item)
-            res = process(TGCLI.send_command('history %s 100' % item['print_name']))
+            msglist = TGCLI.cmd_history(item['print_name'], 100)
+            res = process(msglist)
+            logging_status(pos)
             pos = 100
         else:
             res = (True, 0)
         finished = not force and is_finished(item)
         while res[0] is True and not (finished and res[1]):
-            res = process(TGCLI.send_command('history %s 100 %d' % (item['print_name'], pos)))
+            msglist = TGCLI.cmd_history(item['print_name'], 100, pos)
+            res = process(msglist)
+            logging_status(pos)
             pos += 100
-    except (socket.timeout, ValueError):
-        return pos
     except Exception:
-        logging.exception('Failed to get messages for ' + item['print_name'])
+        logging_status(pos, True)
         return pos
+    logging_status(pos, True)
     set_finished(item)
 
 def export_holes():
@@ -257,7 +272,10 @@ def export_holes():
         purge_queue()
 
 def export_text(force=False):
+    if force:
+        reset_finished()
     logging.info('Getting contacts...')
+    update_peer(TGCLI.cmd_get_self())
     items = TGCLI.cmd_contact_list()
     for item in items:
         update_peer(item)
@@ -271,6 +289,8 @@ def export_text(force=False):
             break
         dlist.extend(items)
         dcount += 100
+    for item in dlist:
+        update_peer(item)
     logging.info('Exporting messages...')
     failed = []
     random.shuffle(dlist)
@@ -294,7 +314,7 @@ def export_text(force=False):
 
 DB = None
 CONN = None
-PEER_CACHE = LRUCache(5)
+PEER_CACHE = LRUCache(10)
 MSG_Q = queue.Queue()
 TGCLI = None
 DLDIR = '.'
@@ -312,7 +332,7 @@ def main(argv):
     DLDIR = args.output
     init_db(args.db)
 
-    TGCLI = tgcli.TelegramCliInterface(args.tgbin, extra_args=('-W',), run=False)
+    TGCLI = tgcli.TelegramCliInterface(args.tgbin, extra_args=('-W',), run=False, timeout=30)
     TGCLI.on_json = MSG_Q.put
     #TGCLI.on_info = tgcli.do_nothing
     #TGCLI.on_text = MSG_Q.put

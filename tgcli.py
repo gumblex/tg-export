@@ -26,15 +26,17 @@ logger.setLevel(logging.INFO)
 do_nothing = lambda *args, **kwargs: None
 
 class TelegramCliInterface:
-    def __init__(self, cmd, extra_args=(), run=True):
+    def __init__(self, cmd, extra_args=(), run=True, timeout=60):
         self.cmd = cmd
         self.extra_args = tuple(extra_args)
         self.proc = None
         self.sock = None
+        self.buffer = b''
         self.ready = threading.Event()
         self.closed = False
         self.thread = None
-        self.tmpdir = tempfile.mkdtemp()
+        self.tmpdir = None
+        self.timeout = timeout
         # Event callbacks
         # `on_info`, `on_json` and `on_text` are for stdout
         self.on_info = logger.info
@@ -65,6 +67,7 @@ class TelegramCliInterface:
     def checkproc(self):
         if self.closed or self.proc and self.proc.poll() is None:
             return self.proc
+        self.tmpdir = tempfile.mkdtemp()
         sockfile = os.path.join(self.tmpdir, 'tgcli.sock')
         self.proc = subprocess.Popen((self.cmd, '-k', self._get_pubkey(), '--json', '-R', '-C', '-S', sockfile) + self.extra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         while not os.path.exists(sockfile):
@@ -76,8 +79,8 @@ class TelegramCliInterface:
     def _run_cli(self):
         while not self.closed:
             self.checkproc()
-            self.ready.set()
             self.on_start()
+            self.ready.set()
             try:
                 while self.ready.is_set():
                     out = self.proc.stdout.readline().decode('utf-8')
@@ -95,8 +98,10 @@ class TelegramCliInterface:
             except BrokenPipeError:
                 pass
             finally:
+                self.sock.shutdown(socket.SHUT_RDWR)
                 if self.proc and self.proc.poll() is not None:
                     self.proc.terminate()
+                    self.proc.wait()
             self.ready.clear()
             self.on_exit()
 
@@ -104,8 +109,16 @@ class TelegramCliInterface:
         self.thread = threading.Thread(target=self._run_cli)
         self.thread.daemon = True
         self.thread.start()
+        self.ready.wait()
+
+    def restart(self):
+        self.close()
+        self.closed = False
+        self.run()
 
     def close(self):
+        if self.closed:
+            return
         self.ready.clear()
         self.closed = True
         try:
@@ -113,7 +126,7 @@ class TelegramCliInterface:
         except subprocess.TimeoutExpired:
             self.proc.kill()
         if self.thread:
-            self.thread.join(2)
+            self.thread.join(1)
         if self.tmpdir:
             shutil.rmtree(self.tmpdir, True)
             self.tmpdir = None
@@ -130,27 +143,31 @@ class TelegramCliInterface:
     def __del__(self):
         self.close()
 
-    def send_command(self, cmd, timeout=180, resync=True):
+    def _readline(self):
+        while self.ready.is_set():
+            lines = self.buffer.split(b'\n', 1)
+            if len(lines) > 1:
+                self.buffer = lines[1]
+                return lines[0] + b'\n'
+            else:
+                self.buffer += self.sock.recv(1024)
+        return b''
+
+    def send_command(self, cmd, timeout=None, resync=True):
         '''
         Send a command to tg-cli.
         use `resync` for consuming text since last timeout.
         '''
         self.checkproc()
-        self.sock.settimeout(timeout)
+        self.sock.settimeout(timeout or self.timeout)
         self.sock.sendall(cmd.encode('utf-8') + b'\n')
-        data = self.sock.recv(1024)
-        lines = data.split(b'\n', 1)
-        if not lines[0].startswith(b'ANSWER '):
-            if resync:
-                while self.ready.is_set() and not lines[0].startswith(b'ANSWER '):
-                    data = self.sock.recv(1024)
-                    lines = data.split(b'\n', 1)
-            else:
-                raise ValueError('Bad reply from telegram-cli: %s' % lines[0][:20])
-        size = int(lines[0][7:].decode('ascii'))
-        reply = lines[1] if len(lines) == 2 else b''
+        line = self._readline()
+        while resync and not line.startswith(b'ANSWER ') and self.ready.is_set():
+            line = self._readline()
+        size = int(line[7:].decode('ascii'))
+        reply = b''
         while self.ready.is_set() and len(reply) < size:
-            reply += self.sock.recv(1024)
+            reply += self._readline()
         ret = reply.decode('utf-8')
         try:
             return json.loads(ret)
