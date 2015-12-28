@@ -35,7 +35,7 @@ class TelegramCliInterface:
         self.ready = threading.Event()
         self.closed = False
         self.thread = None
-        self.tmpdir = None
+        self.tmpdir = tempfile.mkdtemp()
         self.timeout = timeout
         # Event callbacks
         # `on_info`, `on_json` and `on_text` are for stdout
@@ -67,8 +67,9 @@ class TelegramCliInterface:
     def checkproc(self):
         if self.closed or self.proc and self.proc.poll() is None:
             return self.proc
-        self.tmpdir = tempfile.mkdtemp()
         sockfile = os.path.join(self.tmpdir, 'tgcli.sock')
+        if os.path.exists(sockfile):
+            os.unlink(sockfile)
         self.proc = subprocess.Popen((self.cmd, '-k', self._get_pubkey(), '--json', '-R', '-C', '-S', sockfile) + self.extra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         while not os.path.exists(sockfile):
             time.sleep(0.5)
@@ -100,6 +101,7 @@ class TelegramCliInterface:
             finally:
                 self.sock.shutdown(socket.SHUT_RDWR)
                 if self.proc and self.proc.poll() is None:
+                    logging.warning('tg-cli not terminated.')
                     self.proc.terminate()
                     self.proc.wait()
             self.ready.clear()
@@ -114,6 +116,7 @@ class TelegramCliInterface:
     def restart(self):
         self.close()
         self.closed = False
+        self.tmpdir = tempfile.mkdtemp()
         self.run()
 
     def close(self):
@@ -127,7 +130,7 @@ class TelegramCliInterface:
             self.proc.kill()
         if self.thread:
             self.thread.join(1)
-        if self.tmpdir:
+        if os.path.isdir(self.tmpdir):
             shutil.rmtree(self.tmpdir, True)
             self.tmpdir = None
 
@@ -158,7 +161,7 @@ class TelegramCliInterface:
         Send a command to tg-cli.
         use `resync` for consuming text since last timeout.
         '''
-        self.checkproc()
+        self.ready.wait()
         self.sock.settimeout(timeout or self.timeout)
         self.sock.sendall(cmd.encode('utf-8') + b'\n')
         line = self._readline()
