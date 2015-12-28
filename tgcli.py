@@ -99,7 +99,7 @@ class TelegramCliInterface:
                 pass
             finally:
                 self.sock.shutdown(socket.SHUT_RDWR)
-                if self.proc and self.proc.poll() is not None:
+                if self.proc and self.proc.poll() is None:
                     self.proc.terminate()
                     self.proc.wait()
             self.ready.clear()
