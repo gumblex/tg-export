@@ -157,9 +157,8 @@ def is_finished(peer):
     res = CONN.execute('SELECT finished FROM peerinfo WHERE permanent_id = ?', (peer['id'],)).fetchone()
     return res and res[0]
 
-def set_finished(peer):
-    if not is_finished(peer):
-        CONN.execute('UPDATE peerinfo SET finished = ? WHERE permanent_id = ?', (1, peer['id']))
+def set_finished(peer, pos):
+    CONN.execute('UPDATE peerinfo SET finished = ? WHERE permanent_id = ?', (pos, peer['id']))
 
 def reset_finished():
     CONN.execute('UPDATE peerinfo SET finished = 0')
@@ -200,6 +199,8 @@ def process(obj):
             return (False, 0)
         return (None, None)
         # ignore non-json lines
+    elif obj == '':
+        raise ValueError('empty line received')
     return (None, None)
 
 def purge_queue():
@@ -241,6 +242,7 @@ def logging_status(pos, end=False):
 
 def export_for(item, pos=0, force=False):
     logging.info('Exporting messages for %s from %d' % (item['print_name'], pos))
+    ret = None
     try:
         if not pos:
             update_peer(item)
@@ -250,17 +252,18 @@ def export_for(item, pos=0, force=False):
             pos = 100
         else:
             res = (True, 0)
-        finished = not force and is_finished(item)
+        finished = 0 # not force and is_finished(item)
         while res[0] is True and not (finished and res[1]):
             msglist = TGCLI.cmd_history(print_id(item), 100, pos)
             res = process(msglist)
             logging_status(pos)
             pos += 100
-    except Exception:
+    except (Exception, KeyboardInterrupt):
+        ret = pos
+    finally:
         logging_status(pos, True)
+        set_finished(item, pos)
         return pos
-    logging_status(pos, True)
-    set_finished(item)
 
 def export_text(force=False):
     if force:
@@ -286,14 +289,13 @@ def export_text(force=False):
     failed = []
     random.shuffle(dlist)
     for item in dlist:
-        res = export_for(item, 0, force)
+        res = export_for(item, is_finished(item), force)
         if res is not None:
             failed.append((item, res))
             logging.warning('Failed to get messages for %s from %d' % (item['print_name'], res))
         purge_queue()
     DB.commit()
     while failed:
-        #TGCLI.restart()
         newlist = []
         for item, pos in failed:
             res = export_for(item, pos, force)
@@ -302,7 +304,7 @@ def export_text(force=False):
                 logging.warning('Failed to get messages for %s from %d' % (item['print_name'], res))
             purge_queue()
         failed = newlist
-    DB.commit()
+        DB.commit()
     logging.info('Export to database completed.')
 
 DB = None
