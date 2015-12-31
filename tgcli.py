@@ -79,22 +79,22 @@ class TelegramCliInterface:
     def _run_cli(self):
         while not self.closed:
             self.checkproc()
-            self.on_start()
-            self.ready.set()
             try:
-                while self.ready.is_set():
+                while not self.closed:
                     out = self.proc.stdout.readline().decode('utf-8')
-                    if out:
-                        self.on_text(out)
-                        if out[0] in '[{':
-                            try:
-                                self.on_json(json.loads(out.strip()))
-                            except ValueError:
-                                self.on_info(out.strip())
-                        else:
+                    if not out:
+                        break
+                    elif not self.ready.is_set():
+                        self.on_start()
+                        self.ready.set()
+                    self.on_text(out)
+                    if out[0] in '[{':
+                        try:
+                            self.on_json(json.loads(out.strip()))
+                        except ValueError:
                             self.on_info(out.strip())
                     else:
-                        break
+                        self.on_info(out.strip())
             except BrokenPipeError:
                 pass
             finally:
@@ -119,8 +119,8 @@ class TelegramCliInterface:
     def close(self):
         if self.closed:
             return
-        self.ready.clear()
         self.closed = True
+        self.ready.clear()
         try:
             self.proc.wait(2)
         except subprocess.TimeoutExpired:
