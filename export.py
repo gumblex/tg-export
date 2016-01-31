@@ -260,7 +260,7 @@ def export_for(item, pos=0, force=False):
             pos += 100
         # If force, then continue
         if not force:
-            pos = is_finished(item)
+            pos = max(pos, is_finished(item))
         # Else, get messages from the offset of last time
         # Until no message is returned (may be not true)
         while res[0] is True:
@@ -270,7 +270,8 @@ def export_for(item, pos=0, force=False):
             pos += 100
     except Exception:
         logging_status(pos, True)
-        set_finished(item, pos)
+        if pos > is_finished(item):
+            set_finished(item, pos)
         return pos
     logging_status(pos, True)
     set_finished(item, pos)
