@@ -233,8 +233,8 @@ def logging_status(pos, end=False):
         sys.stdout.write('.')
     elif pos:
         sys.stdout.write(str(pos))
-    if end and pos:
-        if pos % 1000:
+    if end:
+        if pos and pos % 1000:
             sys.stdout.write('%d\n' % pos)
         else:
             sys.stdout.write('\n')
@@ -242,8 +242,8 @@ def logging_status(pos, end=False):
 
 def export_for(item, pos=0, force=False):
     logging.info('Exporting messages for %s from %d' % (item['print_name'], pos))
-    ret = None
     try:
+        # Get the first 100
         if not pos:
             update_peer(item)
             msglist = TGCLI.cmd_history(print_id(item), 100)
@@ -252,22 +252,32 @@ def export_for(item, pos=0, force=False):
             pos = 100
         else:
             res = (True, 0)
-        finished = 0 # not force and is_finished(item)
-        while res[0] is True and not (finished and res[1]):
+        # Get the recently updated messages until overlapped
+        while res[0] is True and not res[1]:
             msglist = TGCLI.cmd_history(print_id(item), 100, pos)
             res = process(msglist)
             logging_status(pos)
             pos += 100
-    except (Exception, KeyboardInterrupt):
-        ret = pos
-    finally:
+        # If force, then continue
+        if not force:
+            pos = is_finished(item)
+        # Else, get messages from the offset of last time
+        # Until no message is returned (may be not true)
+        while res[0] is True:
+            msglist = TGCLI.cmd_history(print_id(item), 100, pos)
+            res = process(msglist)
+            logging_status(pos)
+            pos += 100
+    except Exception:
         logging_status(pos, True)
         set_finished(item, pos)
         return pos
+    logging_status(pos, True)
+    set_finished(item, pos)
 
 def export_text(force=False):
-    if force:
-        reset_finished()
+    #if force:
+        #reset_finished()
     logging.info('Getting contacts...')
     update_peer(TGCLI.cmd_get_self())
     items = TGCLI.cmd_contact_list()
@@ -287,9 +297,10 @@ def export_text(force=False):
         update_peer(item)
     logging.info('Exporting messages...')
     failed = []
+    # we need some uncertainty to work around the uncertainty of telegram-cli
     random.shuffle(dlist)
     for item in dlist:
-        res = export_for(item, is_finished(item), force)
+        res = export_for(item, 0, force)
         if res is not None:
             failed.append((item, res))
             logging.warning('Failed to get messages for %s from %d' % (item['print_name'], res))

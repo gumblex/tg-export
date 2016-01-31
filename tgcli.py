@@ -6,6 +6,7 @@ import time
 import json
 import socket
 import shutil
+import signal
 import logging
 import tempfile
 import threading
@@ -25,8 +26,15 @@ logger = logging.getLogger('tgcli')
 logger.setLevel(logging.INFO)
 do_nothing = lambda *args, **kwargs: None
 
+def preexec_ignore_sigint():
+    '''
+    Ignore the SIGINT signal by setting the handler to the standard
+    signal handler SIG_IGN.
+    '''
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
 class TelegramCliInterface:
-    def __init__(self, cmd, extra_args=(), run=True, timeout=60):
+    def __init__(self, cmd, extra_args=(), run=True, timeout=60, ignore_sigint=True):
         self.cmd = cmd
         self.extra_args = tuple(extra_args)
         self.proc = None
@@ -37,6 +45,7 @@ class TelegramCliInterface:
         self.thread = None
         self.tmpdir = tempfile.mkdtemp()
         self.timeout = timeout
+        self.ignore_sigint = ignore_sigint
         # Event callbacks
         # `on_info`, `on_json` and `on_text` are for stdout
         self.on_info = logger.info
@@ -70,7 +79,7 @@ class TelegramCliInterface:
         sockfile = os.path.join(self.tmpdir, 'tgcli.sock')
         if os.path.exists(sockfile):
             os.unlink(sockfile)
-        self.proc = subprocess.Popen((self.cmd, '-k', self._get_pubkey(), '--json', '-R', '-C', '-S', sockfile) + self.extra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.proc = subprocess.Popen((self.cmd, '-k', self._get_pubkey(), '--json', '-R', '-C', '-S', sockfile) + self.extra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=preexec_ignore_sigint if self.ignore_sigint else None)
         while not os.path.exists(sockfile):
             time.sleep(0.5)
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
