@@ -13,7 +13,37 @@ import collections
 
 import jinja2
 
-re_url = re.compile(r'(?i)\b((?:[a-z][\w-]+:(?:/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:\'".,<>?«»“”‘’]))', re.I)
+re_url = re.compile(r'''\b
+(
+    # URL (gruber v2)
+    (?:
+        [a-z][\w-]+:(?:/{1,3}|[a-z0-9%])
+    |
+        www\d{0,3}[.]
+    |
+        [a-z0-9.\-]+[.][a-z]{2,4}/
+    |
+        magnet:\?
+    )
+    (?:
+        [^\s()<>]+
+    |
+        \(([^\s()<>]+|(\([^\s()<>]+\)))*\)
+    )+
+    (?:
+        \(([^\s()<>]+|(\([^\s()<>]+\)))*\)
+    |
+        [^\s`!()\[\]{};:\'".,<>?«»“”‘’]
+    )
+|
+    # BT Hash
+    (?:
+        [a-f0-9]{40}
+    |
+        [a-z2-7]{32}
+    )
+)''', re.I | re.X)
+re_bthash = re.compile(r'[0-9a-f]{40}|[a-z2-7]{32}', re.I)
 re_limit = re.compile(r'^([0-9]+)(,[0-9]+)?$')
 imgfmt = frozenset(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'))
 
@@ -324,7 +354,9 @@ def autolink(text, img=True):
     for match in re_url.finditer(text):
         start, end = match.span()
         url = text[start:end]
-        if img and os.path.splitext(url)[1] in imgfmt:
+        if re_bthash.match(url):
+            ret.append('%s<a href="magnet:?xt=urn:btih:%s">%s</a>' % (text[lastpos:start], url, url))
+        elif img and os.path.splitext(url)[1] in imgfmt:
             ret.append('%s<a href="%s"><img src="%s"></a>' % (text[lastpos:start], url, url))
         else:
             ret.append('%s<a href="%s">%s</a>' % (text[lastpos:start], url, url))
