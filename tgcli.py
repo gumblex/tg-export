@@ -6,6 +6,7 @@ import time
 import json
 import socket
 import shutil
+import signal
 import logging
 import tempfile
 import threading
@@ -25,8 +26,15 @@ logger = logging.getLogger('tgcli')
 logger.setLevel(logging.INFO)
 do_nothing = lambda *args, **kwargs: None
 
+def preexec_ignore_sigint():
+    '''
+    Ignore the SIGINT signal by setting the handler to the standard
+    signal handler SIG_IGN.
+    '''
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
 class TelegramCliInterface:
-    def __init__(self, cmd, extra_args=(), run=True, timeout=60):
+    def __init__(self, cmd, extra_args=(), run=True, timeout=60, ignore_sigint=True):
         self.cmd = cmd
         self.extra_args = tuple(extra_args)
         self.proc = None
@@ -35,8 +43,9 @@ class TelegramCliInterface:
         self.ready = threading.Event()
         self.closed = False
         self.thread = None
-        self.tmpdir = None
+        self.tmpdir = tempfile.mkdtemp()
         self.timeout = timeout
+        self.ignore_sigint = ignore_sigint
         # Event callbacks
         # `on_info`, `on_json` and `on_text` are for stdout
         self.on_info = logger.info
@@ -67,9 +76,10 @@ class TelegramCliInterface:
     def checkproc(self):
         if self.closed or self.proc and self.proc.poll() is None:
             return self.proc
-        self.tmpdir = tempfile.mkdtemp()
         sockfile = os.path.join(self.tmpdir, 'tgcli.sock')
-        self.proc = subprocess.Popen((self.cmd, '-k', self._get_pubkey(), '--json', '-R', '-C', '-S', sockfile) + self.extra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if os.path.exists(sockfile):
+            os.unlink(sockfile)
+        self.proc = subprocess.Popen((self.cmd, '-k', self._get_pubkey(), '--json', '-R', '-C', '-S', sockfile) + self.extra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=preexec_ignore_sigint if self.ignore_sigint else None)
         while not os.path.exists(sockfile):
             time.sleep(0.5)
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -114,6 +124,7 @@ class TelegramCliInterface:
     def restart(self):
         self.close()
         self.closed = False
+        self.tmpdir = tempfile.mkdtemp()
         self.run()
 
     def close(self):
@@ -127,7 +138,7 @@ class TelegramCliInterface:
             self.proc.kill()
         if self.thread:
             self.thread.join(1)
-        if self.tmpdir:
+        if os.path.isdir(self.tmpdir):
             shutil.rmtree(self.tmpdir, True)
             self.tmpdir = None
 
@@ -158,7 +169,7 @@ class TelegramCliInterface:
         Send a command to tg-cli.
         use `resync` for consuming text since last timeout.
         '''
-        self.checkproc()
+        self.ready.wait()
         self.sock.settimeout(timeout or self.timeout)
         self.sock.sendall(cmd.encode('utf-8') + b'\n')
         line = self._readline()

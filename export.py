@@ -16,6 +16,8 @@ import collections
 
 import tgcli
 
+__version__ = '1.2'
+
 re_msglist = re.compile(r'^\[.*\]$')
 re_onemsg = re.compile(r'^\{.+\}$')
 
@@ -180,10 +182,17 @@ def process(obj):
             return (True, log_msg(msg))
         elif msg.get('event') == 'online-status':
             update_peer(msg['user'])
-        elif msg.get('event') == 'updates' and 'deleted' in msg.get('updates', []):
+        elif 'peer' in msg:
             update_peer(msg['peer'])
+        elif msg.get('result') == 'FAIL':
+            if 'can not parse' in msg.get('error', ''):
+                TGCLI.cmd_dialog_list()
+                #raise ValueError(msg.get('error'))
+            return (False, 0)
         return (None, None)
         # ignore non-json lines
+    elif obj == '':
+        raise ValueError('empty line received')
     return (None, None)
 
 def purge_queue():
@@ -210,8 +219,8 @@ def logging_status(pos, end=False):
         sys.stdout.write('.')
     elif pos:
         sys.stdout.write(str(pos))
-    if end and pos > 100:
-        if pos % 1000:
+    if end:
+        if pos and pos % 1000:
             sys.stdout.write('%d\n' % pos)
         else:
             sys.stdout.write('\n')
@@ -220,6 +229,7 @@ def logging_status(pos, end=False):
 def export_for(item, pos=0, force=False):
     logging.info('Exporting messages for %s from %d' % (item['print_name'], pos))
     try:
+        # Get the first 100
         if not pos:
             update_peer(item)
             msglist = TGCLI.cmd_history(item['print_name'], 100)
@@ -228,6 +238,7 @@ def export_for(item, pos=0, force=False):
             pos = 100
         else:
             res = (True, 0)
+        # Get the recently updated messages until overlapped
         finished = not force and is_finished(item)
         while res[0] is True and not (finished and res[1]):
             msglist = TGCLI.cmd_history(item['print_name'], 100, pos)
@@ -310,7 +321,7 @@ def export_text(force=False):
                 logging.warning('Failed to get messages for %s from %d' % (item['print_name'], res))
             purge_queue()
         failed = newlist
-    DB.commit()
+        DB.commit()
     logging.info('Export to database completed.')
 
 DB = None
