@@ -3,7 +3,7 @@ Export Telegram messages, using [telegram-cli](https://github.com/vysheng/tg).
 
 **Note**: For compatibility with `vysheng/tg/test` branch, checkout the `tgupdate` branch.
 The database format of the new branch is not compatible with the old one, because telegram-cli
-now returns a long permanent_id string instead of an integer. If you want to export channels,
+now returns a long `permanent_id` string instead of an integer. If you want to export channels,
 checkout the new branch.
 
 ## export.py
@@ -25,13 +25,25 @@ optional arguments:
                         telegram-cli binary path
 ```
 
+**Lots** of workaround about the unreliability of tg-cli is included (in this script and `tgcli.py`), so the script itself may be unreliable as well.
+
+Common problems with tg-cli are:
+* Dies arbitrarily.
+* No response in the socket interface.
+* Slow response in the socket interface.
+* Half response in the socket interface, while the another half appears after the timeout.
+* Returns an empty array when actually there are remaining messages.
+
+Which is called NO WARRANTY™.
+
 ## logfmt.py
 
-This script can process database written by `export.py` or [tg-chatdig](https://github.com/gumblex/tg-chatdig).
+This script can process database written by `export.py` or [tg-chatdig](https://github.com/gumblex/tg-chatdig), and write out a human-readable format (txt, html, etc.) according to a jinja2 template.
 
 ```
 usage: logfmt.py [-h] [-o OUTPUT] [-d DB] [-b BOTDB] [-D BOTDB_DEST] [-u]
-                 [-t TYPE] [-p PEER] [-r RANGE]
+                 [-t TEMPLATE] [-p PEER] [-P PEER_PRINT] [-l LIMIT]
+                 [-L HARDLIMIT] [-c CACHEDIR] [-r URLPREFIX]
 
 Format exported database file into human-readable format.
 
@@ -45,10 +57,22 @@ optional arguments:
   -D BOTDB_DEST, --botdb-dest BOTDB_DEST
                         tg-chatdig bot logged chat id
   -u, --botdb-user      use user information in tg-chatdig database first
-  -t TYPE, --type TYPE  export type, can be 'txt'(default), 'html'
+  -t TEMPLATE, --template TEMPLATE
+                        export template, can be 'txt'(default), 'html',
+                        'json', or template file name
   -p PEER, --peer PEER  export certain peer id
-  -r RANGE, --range RANGE
-                        message range in slice format
+  -P PEER_PRINT, --peer-print PEER_PRINT
+                        set print name for the peer
+  -l LIMIT, --limit LIMIT
+                        limit the number of fetched messages and set the
+                        offset
+  -L HARDLIMIT, --hardlimit HARDLIMIT
+                        set a hard limit of the number of messages, must be
+                        used with -l
+  -c CACHEDIR, --cachedir CACHEDIR
+                        the path of media files
+  -r URLPREFIX, --urlprefix URLPREFIX
+                        the url prefix of media files
 ```
 
 ## tgcli.py
