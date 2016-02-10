@@ -173,9 +173,11 @@ class Messages:
             limit = ''
         if dbtype == 'cli':
             if peer:
-                where = 'WHERE src=%d or dest=%d' % (peer, peer)
-            for row in self.conn_cli.execute('SELECT * FROM (SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages %s ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % (where, limit)):
-                yield row
+                for row in self.conn_cli.execute('SELECT * FROM (SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages WHERE src=? or dest=? ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % limit, (peer, peer)):
+                    yield row
+            else:
+                for row in self.conn_cli.execute('SELECT * FROM (SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % limit):
+                    yield row
         elif dbtype == 'bot' and self.botdest:
             for mid, src, text, media, date, fwd_src, fwd_date, reply_id in self.conn_bot.execute('SELECT * FROM (SELECT id, src, text, media, date, fwd_src, fwd_date, reply_id FROM messages ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % limit):
                 media, action = self.media_bot2cli(text, media)
@@ -196,7 +198,7 @@ class Messages:
                     'print': printname(first_name, last_name),
                     'flags': flags
                 }
-            for pid, title, members_num, flags in self.conn_cli.execute('SELECT id, permanent_id, title, members_num, flags FROM chats'):
+            for pid, permanent_id, title, members_num, flags in self.conn_cli.execute('SELECT id, permanent_id, title, members_num, flags FROM chats'):
                 self.peers[permanent_id] = {
                     'id': pid,
                     'permanent_id': permanent_id,
@@ -205,7 +207,7 @@ class Messages:
                     'print': printname(title),
                     'flags': flags
                 }
-            for pid, title, members_num, admins_count, kicked_count, flags in self.conn_cli.execute('SELECT id, permanent_id, title, participants_count, admins_count, kicked_count, flags FROM chats'):
+            for pid, permanent_id, title, members_num, admins_count, kicked_count, flags in self.conn_cli.execute('SELECT id, permanent_id, title, participants_count, admins_count, kicked_count, flags FROM channels'):
                 self.peers[permanent_id] = {
                     'id': pid,
                     'permanent_id': permanent_id,
@@ -402,7 +404,7 @@ def main(argv):
     parser.add_argument("-D", "--botdb-dest", help="tg-chatdig bot logged chat id", type=int)
     parser.add_argument("-u", "--botdb-user", action="store_true", help="use user information in tg-chatdig database first")
     parser.add_argument("-t", "--template", help="export template, can be 'txt'(default), 'html', 'json', or template file name", default="txt")
-    parser.add_argument("-p", "--peer", help="export certain peer id", type=int)
+    parser.add_argument("-p", "--peer", help="export certain peer id")
     parser.add_argument("-P", "--peer-print", help="set print name for the peer")
     parser.add_argument("-l", "--limit", help="limit the number of fetched messages and set the offset")
     parser.add_argument("-L", "--hardlimit", help="set a hard limit of the number of messages, must be used with -l", type=int, default=100000)
