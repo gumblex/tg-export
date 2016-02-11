@@ -251,8 +251,8 @@ class Messages:
                         dm['url'] = self.urlprefix + fn
                         break
 
-        if '_ircuser' in media:
-            dm['_ircuser'] = media['_ircuser']
+        if mt and not strict:
+            dm.update(dm[mt])
 
         if ('audio' in media or 'document' in media
             or 'sticker' in media or 'video' in media
