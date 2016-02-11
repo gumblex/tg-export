@@ -252,7 +252,7 @@ class Messages:
                         break
 
         if mt and not strict:
-            dm.update(dm[mt])
+            dm.update(media[mt])
 
         if ('audio' in media or 'document' in media
             or 'sticker' in media or 'video' in media
