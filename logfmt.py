@@ -251,6 +251,8 @@ class Messages:
                         dm['url'] = self.urlprefix + fn
                         break
 
+        if '_ircuser' in media:
+            dm['_ircuser'] = media['_ircuser']
         if mt and not strict:
             dm.update(media[mt])
 
