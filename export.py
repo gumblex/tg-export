@@ -7,9 +7,11 @@ import json
 import time
 import queue
 import random
+import struct
 import sqlite3
 import logging
 import argparse
+import binascii
 import functools
 import collections
 
@@ -79,6 +81,38 @@ def print_id(obj):
         return '%s#id%d' % (obj['peer_type'], obj['peer_id'])
     except KeyError:
         return obj['print_name']
+
+class tgl_peer_id_t(collections.namedtuple('tgl_peer_id_t', 'peer_type peer_id access_hash')):
+    '''
+    typedef struct {
+      int peer_type;
+      int peer_id;
+      long long access_hash;
+    } tgl_peer_id_t;
+    '''
+    @classmethod
+    def loads(cls, s):
+        return cls._make(struct.unpack('<iiq', binascii.a2b_hex(s.lstrip('$'))))
+
+    def dumps(self):
+        return '$' + binascii.b2a_hex(struct.pack('<iiq', *self)).decode('ascii')
+
+class tgl_message_id_t(collections.namedtuple('tgl_message_id_t', 'peer_type peer_id id access_hash')):
+    '''
+    typedef struct tgl_message_id {
+      unsigned peer_type;
+      unsigned peer_id;
+      long long id;
+      long long access_hash;
+    } tgl_message_id_t;
+    '''
+    @classmethod
+    def loads(cls, s):
+        return cls._make(struct.unpack('<IIqq', binascii.a2b_hex(s)))
+
+    def dumps(self):
+        return binascii.b2a_hex(struct.pack('<IIqq', *self)).decode('ascii')
+
 
 def init_db(filename):
     global DB, CONN
