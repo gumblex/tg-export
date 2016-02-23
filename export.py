@@ -278,7 +278,7 @@ def export_holes():
             try:
                 res = process(TGCLI.send_command('get_message %d' % mid))
             except Exception:
-                failed.append(mid)
+                newlist.append(mid)
         failed = newlist
         purge_queue()
 
