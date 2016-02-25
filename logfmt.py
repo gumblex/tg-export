@@ -39,8 +39,6 @@ re_url = re.compile(r'''\b
     # BT Hash
     (?:
         [a-f0-9]{40}
-    |
-        [a-z2-7]{32}
     )
 )''', re.I | re.X)
 re_bthash = re.compile(r'[0-9a-f]{40}|[a-z2-7]{32}', re.I)
@@ -309,7 +307,11 @@ class Messages:
                 extra = {'fwd_src': self.peers[fwd_src], 'fwd_date': fwd_date}
             elif reply_id:
                 msgtype = 're'
-                extra = {'reply': self.msgs.get(reply_id, unkmsg(reply_id))}
+                remsg = self.msgs.get(reply_id, unkmsg(reply_id))
+                if remsg['msgtype'] == 're':
+                    remsg = remsg.copy()
+                    remsg['extra'] = None
+                extra = {'reply': remsg}
             else:
                 msgtype, extra = '', None
             media = json.loads(media or '{}')
@@ -354,7 +356,7 @@ class Messages:
         yield from template.stream(**kvars)
 
     def render_peer_json(self, pid, name=None):
-        je = json.JSONEncoder()
+        je = json.JSONEncoder(indent=0)
         peer = self.peers[pid].copy()
         if name:
             peer['print'] = name
