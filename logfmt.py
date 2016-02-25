@@ -478,6 +478,13 @@ class Messages:
     def getmsgs(self, peer=None):
         db = 'cli' if self.db_cli else 'bot'
         for mid, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags in self.msgfromdb(db, peer):
+            src = self.peers[src]
+            dest = self.peers[dest]
+            if not (db == 'bot' or
+                dest['id'] == peer['id'] or
+                peer['type'] == 'user' and
+                src['id'] == peer['id'] and dest['type'] == 'user'):
+                continue
             if fwd_src:
                 msgtype = 'fwd'
                 extra = {'fwd_src': self.peers[fwd_src], 'fwd_date': fwd_date}
@@ -487,8 +494,6 @@ class Messages:
             else:
                 msgtype, extra = '', None
             media = json.loads(media or '{}')
-            src = self.peers[src]
-            dest = self.peers[dest]
             if db == 'bot' and '_ircuser' in media:
                 src['first_name'] = src['print'] = media['_ircuser']
             msg = {
@@ -507,11 +512,7 @@ class Messages:
                 'flags': flags
             }
             self.msgs[mid] = msg
-            if (db == 'bot' or
-                dest['id'] == peer['id'] or
-                peer['type'] == 'user' and
-                src['id'] == peer['id'] and dest['type'] == 'user'):
-                yield mid, msg
+            yield mid, msg
 
     def render_peer(self, peer, name=None):
         peer = peer.copy()
