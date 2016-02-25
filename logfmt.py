@@ -6,9 +6,11 @@ import re
 import sys
 import time
 import json
+import struct
 import sqlite3
 import operator
 import argparse
+import binascii
 import collections
 
 import jinja2
@@ -51,7 +53,6 @@ printname = lambda first, last='': (first + ' ' + last if last else first) or '<
 
 strftime = lambda date, fmt='%Y-%m-%d %H:%M:%S': time.strftime(fmt, time.localtime(date))
 
-unkpeer = lambda pid=None: {'id': pid, 'print': '<Unknown>'}
 unkuser = lambda user: {
     'id': user['id'],
     'first_name': user['first_name'],
@@ -77,6 +78,76 @@ unkmsg = lambda mid: {
     'action': {},
     'flags': 0
 }
+
+def convert_msgid2(msgid):
+    if msgid is None:
+        return None
+    elif isinstance(msgid, int):
+        return msgid
+    elif len(msgid) == 48:
+        return tgl_message_id_t.loads(msgid).id
+    else:
+        return int(msgid)
+
+class tgl_peer_id_t(collections.namedtuple('tgl_peer_id_t', 'peer_type peer_id access_hash')):
+    '''
+    typedef struct {
+      int peer_type;
+      int peer_id;
+      long long access_hash;
+    } tgl_peer_id_t;
+    '''
+    TGL_PEER_USER = 1
+    TGL_PEER_CHAT = 2
+    TGL_PEER_GEO_CHAT = 3
+    TGL_PEER_ENCR_CHAT = 4
+    TGL_PEER_CHANNEL = 5
+    TGL_PEER_TEMP_ID = 100
+    TGL_PEER_RANDOM_ID = 101
+    TGL_PEER_UNKNOWN = 0
+
+    @classmethod
+    def loads(cls, s):
+        return cls._make(struct.unpack('<iiq', binascii.a2b_hex(s.lstrip('$'))))
+
+    def dumps(self):
+        return '$' + binascii.b2a_hex(struct.pack('<iiq', *self)).decode('ascii')
+
+    @classmethod
+    def from_peer(cls, peer):
+        pid = peer['id']
+        if isinstance(pid, str):
+            return cls.loads(pid)
+        elif peer['type'] == 'user':
+            return cls(cls.TGL_PEER_USER, pid, 0)
+        elif peer['type'] == 'chat':
+            return cls(cls.TGL_PEER_CHAT, pid, 0)
+        elif peer['type'] == 'encr_chat':
+            return cls(cls.TGL_PEER_ENCR_CHAT, pid, 0)
+        elif peer['type'] == 'channel':
+            return cls(cls.TGL_PEER_CHANNEL, pid, 0)
+
+    def to_id(self):
+        # We assume peer_type is unsigned int.
+        return self.peer_type<<32 | self.peer_id
+
+class tgl_message_id_t(collections.namedtuple('tgl_message_id_t', 'peer_type peer_id id access_hash')):
+    '''
+    typedef struct tgl_message_id {
+      unsigned peer_type;
+      unsigned peer_id;
+      long long id;
+      long long access_hash;
+    } tgl_message_id_t;
+
+    The peer_type, peer_id and access_hash are the same as those of the chat.
+    '''
+    @classmethod
+    def loads(cls, s):
+        return cls._make(struct.unpack('<IIqq', binascii.a2b_hex(s)))
+
+    def dumps(self):
+        return binascii.b2a_hex(struct.pack('<IIqq', *self)).decode('ascii')
 
 class LRUCache:
 
@@ -116,10 +187,84 @@ class StreamArray(list):
     def __len__(self):
         return 1
 
+class PeerStore(collections.UserDict):
+
+    def __init__(self, *args, **kwds):
+        super().__init__(*args, **kwds)
+        self.name = {}
+
+    def __setitem__(self, key, value):
+        self.data[self._convert(key)] = value
+
+    def setname(self, key, value):
+        self.name[value] = self._convert(key)
+
+    def __getitem__(self, key):
+        peerid, peertype = self._convert(key)
+        try:
+            return self.data[(peerid, peertype)]
+        except KeyError:
+            d = self.data[(peerid, peertype)] = {'id': peerid, 'type': peertype, 'print': '<Unknown>'}
+            return d
+
+    def find(self, key):
+        try:
+            return self.__getitem__(key)
+        except Exception:
+            if key in self.name:
+                return self.data[self.name[key]]
+            else:
+                for k, v in self.name.items():
+                    if key in k:
+                        return self.data[v]
+        return {'id': None, 'type': 'user', 'print': key}
+
+    @staticmethod
+    def _convert(key=None):
+        peertype = None
+        if isinstance(key, tuple):
+            peerid, peertype = key
+        else:
+            peerid = key
+        peer_id = None
+        peer_type = tgl_peer_id_t.TGL_PEER_USER
+        try:
+            peerid = int(peerid)
+        except ValueError:
+            pass
+        if isinstance(peerid, str):
+            sp = peerid.split('#id', 1)
+            if len(sp) == 2:
+                peer_id = int(sp[1])
+                peertype = sp[0]
+            else:
+                peer = tgl_peer_id_t.loads(peerid)
+                peer_id = peer.peer_id
+                peer_type = peer.peer_type
+        elif peerid is None:
+            pass
+        elif peerid > 4294967296:
+            # 1 << 32
+            peer_id = peerid & 4294967295
+            peer_type = peerid >> 32
+        else:
+            peer_id = abs(peerid)
+            peer_type = tgl_peer_id_t.TGL_PEER_CHAT if peerid < 0 else tgl_peer_id_t.TGL_PEER_USER
+        if peertype:
+            return (peer_id, peertype)
+        elif peer_type == tgl_peer_id_t.TGL_PEER_USER:
+            return (peer_id, 'user')
+        elif peer_type == tgl_peer_id_t.TGL_PEER_CHAT:
+            return (peer_id, 'chat')
+        elif peer_type == tgl_peer_id_t.TGL_PEER_ENCR_CHAT:
+            return (peer_id, 'encr_chat')
+        elif peer_type == tgl_peer_id_t.TGL_PEER_CHANNEL:
+            return (peer_id, 'channel')
+
 class Messages:
 
     def __init__(self, stream=False, template='history.txt'):
-        self.peers = collections.defaultdict(unkpeer)
+        self.peers = PeerStore()
         if stream:
             self.msgs = LRUCache(100)
         else:
@@ -127,6 +272,7 @@ class Messages:
 
         self.db_cli = None
         self.conn_cli = None
+        self.db_cli_ver = None
         self.db_bot = None
         self.conn_bot = None
 
@@ -149,11 +295,26 @@ class Messages:
             if dbtype == 'cli':
                 self.db_cli = sqlite3.connect(filename)
                 self.conn_cli = self.db_cli.cursor()
+                for name, sql in self.conn_cli.execute("SELECT name, sql FROM sqlite_master WHERE type='table'"):
+                    if name == 'exportinfo':
+                        self.db_cli_ver = 1
+                        break
+                    elif name == 'peerinfo':
+                        if 'permanent_id' in sql:
+                            self.db_cli_ver = 2
+                        else:
+                            self.db_cli_ver = 3
+                        break
                 self.userfromdb('cli')
             elif dbtype == 'bot':
                 self.db_bot = sqlite3.connect(filename)
                 self.conn_bot = self.db_bot.cursor()
-                self.botdest = botdest
+                self.botdest = self.peers.find(botdest)
+                if self.botdest['id'] is None:
+                    raise KeyError('peer not found: %s' % botdest)
+                if self.botdest['type'] == 'user':
+                    self.botdest['type'] = 'chat'
+                self.botdest = tgl_peer_id_t.from_peer(self.botdest).to_id()
                 if botuserdb or not self.db_cli:
                     self.userfromdb('bot')
         else:
@@ -173,11 +334,20 @@ class Messages:
             limit = ''
         if dbtype == 'cli':
             if peer:
-                for row in self.conn_cli.execute('SELECT * FROM (SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages WHERE src=? or dest=? ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % limit, (peer, peer)):
-                    yield row
+                if self.db_cli_ver == 1:
+                    if peer['type'] == 'user':
+                        pid = peer['id']
+                    else:
+                        pid = -peer['id']
+                elif self.db_cli_ver == 2:
+                    pid = tgl_peer_id_t.from_peer(peer).dumps()
+                else:
+                    pid = tgl_peer_id_t.from_peer(peer).to_id()
+                c = self.conn_cli.execute('SELECT * FROM (SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages WHERE src=? or dest=? ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % limit, (pid, pid))
             else:
-                for row in self.conn_cli.execute('SELECT * FROM (SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % limit):
-                    yield row
+                c = self.conn_cli.execute('SELECT * FROM (SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % limit)
+            for mid, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags in c:
+                yield convert_msgid2(mid), src, dest, text, media, date, fwd_src, fwd_date, convert_msgid2(reply_id), out, unread, service, action, flags
         elif dbtype == 'bot' and self.botdest:
             for mid, src, text, media, date, fwd_src, fwd_date, reply_id in self.conn_bot.execute('SELECT * FROM (SELECT id, src, text, media, date, fwd_src, fwd_date, reply_id FROM messages ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % limit):
                 media, action = self.media_bot2cli(text, media)
@@ -187,10 +357,10 @@ class Messages:
 
     def userfromdb(self, dbtype='cli'):
         if dbtype == 'cli':
-            for pid, permanent_id, phone, username, first_name, last_name, flags in self.conn_cli.execute('SELECT id, permanent_id, phone, username, first_name, last_name, flags FROM users'):
-                self.peers[permanent_id] = {
+            for pid, phone, username, first_name, last_name, flags in self.conn_cli.execute('SELECT id, phone, username, first_name, last_name, flags FROM users'):
+                self.peers[(pid, 'user')] = {
                     'id': pid,
-                    'permanent_id': permanent_id,
+                    'type': 'user',
                     'phone': phone,
                     'username': username,
                     'first_name': first_name,
@@ -198,30 +368,39 @@ class Messages:
                     'print': printname(first_name, last_name),
                     'flags': flags
                 }
-            for pid, permanent_id, title, members_num, flags in self.conn_cli.execute('SELECT id, permanent_id, title, members_num, flags FROM chats'):
-                self.peers[permanent_id] = {
+            for pid, title, members_num, flags in self.conn_cli.execute('SELECT id, title, members_num, flags FROM chats'):
+                self.peers[(pid, 'chat')] = {
                     'id': pid,
-                    'permanent_id': permanent_id,
+                    'type': 'chat',
                     'title': title,
                     'members_num': members_num,
                     'print': printname(title),
                     'flags': flags
                 }
-            for pid, permanent_id, title, members_num, admins_count, kicked_count, flags in self.conn_cli.execute('SELECT id, permanent_id, title, participants_count, admins_count, kicked_count, flags FROM channels'):
-                self.peers[permanent_id] = {
-                    'id': pid,
-                    'permanent_id': permanent_id,
-                    'title': title,
-                    # keep compatible with chats
-                    'members_num': members_num,
-                    'admins_count': admins_count,
-                    'kicked_count': kicked_count,
-                    'print': printname(title),
-                    'flags': flags
-                }
+            if self.db_cli_ver > 1:
+                for pid, title, members_num, admins_count, kicked_count, flags in self.conn_cli.execute('SELECT id, title, participants_count, admins_count, kicked_count, flags FROM channels'):
+                    self.peers[(pid, 'channel')] = {
+                        'id': pid,
+                        'type': 'channel',
+                        'title': title,
+                        # keep compatible with chats
+                        'members_num': members_num,
+                        'admins_count': admins_count,
+                        'kicked_count': kicked_count,
+                        'print': printname(title),
+                        'flags': flags
+                    }
+            if self.db_cli_ver == 1:
+                sql = 'SELECT id, print_name FROM exportinfo'
+            elif self.db_cli_ver == 2:
+                sql = 'SELECT permanent_id, print_name FROM peerinfo'
+            else:
+                sql = 'SELECT id, print_name FROM peerinfo'
+            for pid, print_name in self.conn_cli.execute(sql):
+                self.peers.setname(pid, print_name)
         elif dbtype == 'bot':
             for pid, username, first_name, last_name in self.conn_bot.execute('SELECT id, username, first_name, last_name FROM users'):
-                self.peers[pid].update({
+                self.peers[(pid, 'user')].update({
                     'id': pid,
                     'username': username,
                     'first_name': first_name,
@@ -309,12 +488,13 @@ class Messages:
                 msgtype, extra = '', None
             media = json.loads(media or '{}')
             src = self.peers[src]
+            dest = self.peers[dest]
             if db == 'bot' and '_ircuser' in media:
                 src['first_name'] = src['print'] = media['_ircuser']
             msg = {
                 'mid': mid,
                 'src': src,
-                'dest': self.peers[dest],
+                'dest': dest,
                 'text': text or media.get('caption'),
                 'media': media,
                 'date': date,
@@ -327,16 +507,14 @@ class Messages:
                 'flags': flags
             }
             self.msgs[mid] = msg
-            if db == 'cli':
-                if dest == peer and (out or dest and dest < 0):
-                    yield mid, msg
-                elif src == peer:
-                    yield mid, msg
-            else:
+            if (db == 'bot' or
+                dest['id'] == peer['id'] or
+                peer['type'] == 'user' and
+                src['id'] == peer['id'] and dest['type'] == 'user'):
                 yield mid, msg
 
-    def render_peer(self, pid, name=None):
-        peer = self.peers[pid].copy()
+    def render_peer(self, peer, name=None):
+        peer = peer.copy()
         if name:
             peer['print'] = name
         kvars = {
@@ -344,26 +522,30 @@ class Messages:
             'gentime': time.time()
         }
         if self.stream:
-            kvars['msgs'] = (m for k, m in self.getmsgs(pid))
+            kvars['msgs'] = (m for k, m in self.getmsgs(peer))
         else:
-            msgs = tuple(m for k, m in self.getmsgs(pid))
+            msgs = tuple(m for k, m in self.getmsgs(peer))
             kvars['msgs'] = msgs
-            kvars['start'] = min(msgs, key=operator.itemgetter('date'))['date']
-            kvars['end'] = max(msgs, key=operator.itemgetter('date'))['date']
+            if msgs:
+                kvars['start'] = min(msgs, key=operator.itemgetter('date'))['date']
+                kvars['end'] = max(msgs, key=operator.itemgetter('date'))['date']
+            else:
+                kvars['start'] = kvars['end'] = 0
             kvars['count'] = len(msgs)
         template = self.jinjaenv.get_template(self.template)
         yield from template.stream(**kvars)
 
-    def render_peer_json(self, pid, name=None):
+    def render_peer_json(self, peer, name=None):
         je = json.JSONEncoder()
-        peer = self.peers[pid].copy()
+        peer = peer.copy()
+        pid = peer['id']
         if name:
             peer['print'] = name
         kvars = {
             'peer': peer,
             'gentime': time.time()
         }
-        kvars['msgs'] = StreamArray(m for k, m in self.getmsgs(pid))
+        kvars['msgs'] = StreamArray(m for k, m in self.getmsgs(peer))
         yield from je.iterencode(kvars)
 
 def autolink(text, img=True):
@@ -403,10 +585,10 @@ def main(argv):
     parser.add_argument("-o", "--output", help="output path", default="export.txt")
     parser.add_argument("-d", "--db", help="tg-export database path", default="telegram-export.db")
     parser.add_argument("-b", "--botdb", help="tg-chatdig bot database path", default="")
-    parser.add_argument("-D", "--botdb-dest", help="tg-chatdig bot logged chat id", type=int)
+    parser.add_argument("-D", "--botdb-dest", help="tg-chatdig bot logged chat id or tg-cli-style peer name")
     parser.add_argument("-u", "--botdb-user", action="store_true", help="use user information in tg-chatdig database first")
     parser.add_argument("-t", "--template", help="export template, can be 'txt'(default), 'html', 'json', or template file name", default="txt")
-    parser.add_argument("-p", "--peer", help="export certain peer id")
+    parser.add_argument("-p", "--peer", help="export certain peer id or tg-cli-style peer name")
     parser.add_argument("-P", "--peer-print", help="set print name for the peer")
     parser.add_argument("-l", "--limit", help="limit the number of fetched messages and set the offset")
     parser.add_argument("-L", "--hardlimit", help="set a hard limit of the number of messages, must be used with -l", type=int, default=100000)
@@ -432,12 +614,15 @@ def main(argv):
         msg.init_db(args.db, 'cli')
     if args.botdb:
         msg.init_db(args.botdb, 'bot', args.botdb_user or not args.db, args.botdb_dest)
+    peer = msg.peers.find(args.peer)
+    if peer['id'] is None:
+        raise KeyError('peer not found: %s' % args.peer)
     if args.output == '-':
-        for ln in render_func(args.peer, args.peer_print):
+        for ln in render_func(peer, args.peer_print):
             sys.stdout.write(ln)
     else:
         with open(args.output, 'w') as f:
-            for ln in render_func(args.peer, args.peer_print):
+            for ln in render_func(peer, args.peer_print):
                 f.write(ln)
 
 if __name__ == '__main__':

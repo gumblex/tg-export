@@ -1,10 +1,11 @@
 # tg-export
 Export Telegram messages, using [telegram-cli](https://github.com/vysheng/tg).
 
-**Note**: For compatibility with `vysheng/tg/test` branch, checkout the `tgupdate` branch.
-The database format of the new branch is not compatible with the old one, because telegram-cli
-now returns a long `permanent_id` string instead of an integer. If you want to export channels,
-checkout the new branch.
+This version (v3) is compatible with `vysheng/tg/master` AND `vysheng/tg/test`
+branches.
+
+**Note**: The database format of this version (v3) is not compatible with the old ones.
+To convert old databases (v1 or v2), run `python3 dbconvert.py [old.db [new.db]]`
 
 ## export.py
 
