@@ -299,6 +299,11 @@ class Messages:
     def getmsgs(self, peer=None):
         db = 'cli' if self.db_cli else 'bot'
         for mid, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags in self.msgfromdb(db, peer):
+            if not (db == 'bot' or
+                dest == peer or
+                peer.startswith('$01') and
+                src == peer and dest.startswith('$01')):
+                continue
             if fwd_src:
                 msgtype = 'fwd'
                 extra = {'fwd_src': self.peers[fwd_src], 'fwd_date': fwd_date}
@@ -327,13 +332,7 @@ class Messages:
                 'flags': flags
             }
             self.msgs[mid] = msg
-            if db == 'cli':
-                if dest == peer and (out or dest and dest < 0):
-                    yield mid, msg
-                elif src == peer:
-                    yield mid, msg
-            else:
-                yield mid, msg
+            yield mid, msg
 
     def render_peer(self, pid, name=None):
         peer = self.peers[pid].copy()
