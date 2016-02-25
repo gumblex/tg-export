@@ -41,8 +41,6 @@ re_url = re.compile(r'''\b
     # BT Hash
     (?:
         [a-f0-9]{40}
-    |
-        [a-z2-7]{32}
     )
 )''', re.I | re.X)
 re_bthash = re.compile(r'[0-9a-f]{40}|[a-z2-7]{32}', re.I)
@@ -490,7 +488,11 @@ class Messages:
                 extra = {'fwd_src': self.peers[fwd_src], 'fwd_date': fwd_date}
             elif reply_id:
                 msgtype = 're'
-                extra = {'reply': self.msgs.get(reply_id, unkmsg(reply_id))}
+                remsg = self.msgs.get(reply_id, unkmsg(reply_id))
+                if remsg['msgtype'] == 're':
+                    remsg = remsg.copy()
+                    remsg['extra'] = None
+                extra = {'reply': remsg}
             else:
                 msgtype, extra = '', None
             media = json.loads(media or '{}')
@@ -537,7 +539,7 @@ class Messages:
         yield from template.stream(**kvars)
 
     def render_peer_json(self, peer, name=None):
-        je = json.JSONEncoder()
+        je = json.JSONEncoder(indent=0)
         peer = peer.copy()
         pid = peer['id']
         if name:
@@ -583,8 +585,8 @@ CONN = None
 
 def main(argv):
     parser = argparse.ArgumentParser(description="Format exported database file into human-readable format.")
-    parser.add_argument("-o", "--output", help="output path", default="export.txt")
-    parser.add_argument("-d", "--db", help="tg-export database path", default="telegram-export.db")
+    parser.add_argument("-o", "--output", help="output path")
+    parser.add_argument("-d", "--db", help="tg-export database path", default="tg-export3.db")
     parser.add_argument("-b", "--botdb", help="tg-chatdig bot database path", default="")
     parser.add_argument("-D", "--botdb-dest", help="tg-chatdig bot logged chat id or tg-cli-style peer name")
     parser.add_argument("-u", "--botdb-user", action="store_true", help="use user information in tg-chatdig database first")
@@ -622,7 +624,16 @@ def main(argv):
         for ln in render_func(peer, args.peer_print):
             sys.stdout.write(ln)
     else:
-        with open(args.output, 'w') as f:
+        fn = args.output
+        if args.output is None:
+            fn = '%s#id%d' % (peer['type'], peer['id'])
+            if args.template == 'json':
+                fn += '.json'
+            elif '.' in args.template:
+                fn += os.path.splitext(args.template)[1]
+            else:
+                fn += '.' + args.template
+        with open(fn, 'w') as f:
             for ln in render_func(peer, args.peer_print):
                 f.write(ln)
 
