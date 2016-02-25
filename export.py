@@ -17,7 +17,7 @@ import collections
 
 import tgcli
 
-__version__ = '2.0'
+__version__ = '2.1'
 
 re_msglist = re.compile(r'^\[.*\]$')
 re_onemsg = re.compile(r'^\{.+\}$')
