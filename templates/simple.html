@@ -50,8 +50,10 @@ img {max-width: 400px; max-height: 300px}
         {%- else -%}
             <i>[{{ msg.media.type }}]</i>
         {%- endif %}
-    {%- elif msg.media.type in ('contact', 'geo', 'location') -%}
+    {%- elif msg.media.type == 'contact' -%}
         <i>[{{ msg.media|string|escape }}]</i>
+    {%- elif msg.media.type in ('geo', 'location', 'venue') -%}
+        <i>[location <a href="https://www.openstreetmap.org/?mlat={{ msg.media.latitude }}&mlon={{ msg.media.longitude }}">{{ msg.media.latitude }}, {{ msg.media.longitude }}</a>]</i>
     {%- elif '_ircuser' in msg.media -%}
         <i>[IRC]</i>
     {%- else %}
