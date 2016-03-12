@@ -98,3 +98,7 @@ dialogs = tgcli.cmd_dialog_list()
  * `close()` properly ends the subprocess.
 
 `do_nothing()` function does nothing. (for callbacks)
+
+## License
+
+Now it's LGPLv3+.

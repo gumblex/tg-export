@@ -17,17 +17,18 @@ tgcli.py - Library to interact with telegram-cli.
 Copyright (C) 2015-2016  Dingyuan Wang
 
 This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+it under the terms of the GNU Lesser General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+GNU Lesser General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+You should have received a copy of the GNU Lesser General Public
+License along with this program.  If not, see
+<http://www.gnu.org/licenses/>.
 '''
 
 tg_server_pub = '''-----BEGIN RSA PUBLIC KEY-----
@@ -75,7 +76,8 @@ class TelegramCliInterface:
             self.run()
 
     def _get_pubkey(self):
-        tgdir = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(self.cmd)), '..'))
+        tgdir = os.path.abspath(os.path.join(os.path.dirname(
+                                os.path.realpath(self.cmd)), '..'))
         paths = [
             os.path.join(tgdir, 'tg-server.pub'),
             os.path.join(tgdir, 'server.pub'),
@@ -97,7 +99,11 @@ class TelegramCliInterface:
         sockfile = os.path.join(self.tmpdir, 'tgcli.sock')
         if os.path.exists(sockfile):
             os.unlink(sockfile)
-        self.proc = subprocess.Popen((self.cmd, '-k', self._get_pubkey(), '--json', '-R', '-C', '-S', sockfile) + self.extra_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=preexec_ignore_sigint if self.ignore_sigint else None)
+        self.proc = subprocess.Popen((self.cmd, '-k', self._get_pubkey(),
+            '--json', '-R', '-C', '-S', sockfile) + self.extra_args,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            preexec_fn=preexec_ignore_sigint if self.ignore_sigint else None)
         while not os.path.exists(sockfile):
             time.sleep(0.5)
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -210,7 +216,8 @@ class TelegramCliInterface:
         `kwargs` are for `send_command`
         '''
         if name.startswith('cmd_'):
-            fn = lambda *args, **kwargs: self.send_command(' '.join(map(str, (name[4:],) + args)), **kwargs)
+            fn = lambda *args, **kwargs: self.send_command(
+                ' '.join(map(str, (name[4:],) + args)), **kwargs)
             return fn
         else:
             raise AttributeError
