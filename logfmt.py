@@ -541,7 +541,6 @@ class Messages:
     def render_peer_json(self, peer, name=None):
         je = json.JSONEncoder(indent=0)
         peer = peer.copy()
-        pid = peer['id']
         if name:
             peer['print'] = name
         kvars = {
@@ -579,9 +578,6 @@ def smartname(user, limit=20):
             return first[:limit]
     else:
         return pn
-
-DB = None
-CONN = None
 
 def main(argv):
     parser = argparse.ArgumentParser(description="Format exported database file into human-readable format.")
