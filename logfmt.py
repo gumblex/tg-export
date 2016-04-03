@@ -280,6 +280,8 @@ class Messages:
 
         self.template = template
         self.stream = stream
+        # can be 'bot', 'cli' or None (no conversion)
+        self.media_format = 'cli'
         self.cachedir = None
         self.urlprefix = None
         self.jinjaenv = jinja2.Environment(loader=jinja2.FileSystemLoader('templates'))
@@ -312,7 +314,8 @@ class Messages:
                     raise KeyError('peer not found: %s' % botdest)
                 if self.botdest['type'] == 'user':
                     self.botdest['type'] = 'chat'
-                self.botdest = tgl_peer_id_t.from_peer(self.botdest).to_id()
+                # self.botdest = tgl_peer_id_t.from_peer(self.botdest).to_id()
+                self.botdest = (self.botdest['id'], self.botdest['type'])
                 if botuserdb or not self.db_cli:
                     self.userfromdb('bot')
         else:
@@ -345,10 +348,16 @@ class Messages:
             else:
                 c = self.conn_cli.execute('SELECT * FROM (SELECT id, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags FROM messages ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % limit)
             for mid, src, dest, text, media, date, fwd_src, fwd_date, reply_id, out, unread, service, action, flags in c:
+                if self.media_format == 'bot':
+                    media, caption = self.media_cli2bot(media, action)
+                    text = text or caption
                 yield convert_msgid2(mid), src, dest, text, media, date, fwd_src, fwd_date, convert_msgid2(reply_id), out, unread, service, action, flags
         elif dbtype == 'bot' and self.botdest:
             for mid, src, text, media, date, fwd_src, fwd_date, reply_id in self.conn_bot.execute('SELECT * FROM (SELECT id, src, text, media, date, fwd_src, fwd_date, reply_id FROM messages ORDER BY date DESC, id DESC %s) ORDER BY date ASC, id ASC' % limit):
-                media, action = self.media_bot2cli(text, media)
+                if self.media_format == 'cli':
+                    media, action = self.media_bot2cli(text, media)
+                else:
+                    action = None
                 yield mid, src, self.botdest, text, media, date, fwd_src, fwd_date, reply_id, 0, 0, bool(action), action, 256
         else:
             raise ValueError('dbtype or self.botdest is invalid')
@@ -472,6 +481,66 @@ class Messages:
             da['type'] = 'chat_created'
             da['title'] = ''
         return json.dumps(dm) if dm else None, json.dumps(da) if da else None
+
+    def media_cli2bot(media=None, action=None):
+        type_map = {
+            # media
+            'photo': 'photo',
+            'document': 'document',
+            'unsupported': 'document',
+            'geo': 'location',
+            'venue': 'location',
+            'contact': 'contact',
+            # action
+            'chat_add_user': 'new_chat_participant',
+            'chat_add_user_link': 'new_chat_participant',
+            'chat_del_user': 'left_chat_participant',
+            'chat_rename': 'new_chat_title',
+            'chat_change_photo': 'new_chat_photo',
+            'chat_delete_photo': 'delete_chat_photo',
+            'chat_created': 'group_chat_created'
+        }
+        d = {}
+        caption = None
+        if media:
+            media = json.loads(media)
+        if action:
+            action = json.loads(action)
+        if media and 'type' in media:
+            media = media.copy()
+            if media['type'] == 'photo':
+                caption = media['caption']
+                d['photo'] = []
+            elif media['type'] in ('document', 'unsupported'):
+                d['document'] = {}
+            elif 'longitude' in media:
+                # 'type' may be the name of the place
+                d['location'] = {
+                    'longitude': media['longitude'],
+                    'latitude': media['latitude']
+                }
+            elif media['type'] == 'contact':
+                del media['type']
+                media['phone_number'] = media.pop('phone')
+                d['contact'] = media
+            # ignore other undefined types to Bot API
+        if action and 'type' in action:
+            newname = type_map.get(action['type'])
+            if newname.endswith('chat_participant'):
+                d[newname] = {
+                    'id': action['user']['id'],
+                    'first_name': action['user'].get('first_name', ''),
+                    'last_name': action['user'].get('last_name', ''),
+                    'username': action['user'].get('username', '')
+                }
+            elif newname == 'new_chat_title':
+                d[newname] = action['title']
+            elif newname == 'new_chat_photo':
+                d[newname] = []
+            elif newname in ('delete_chat_photo', 'group_chat_created'):
+                d[newname] = True
+            # ignore other undefined types to Bot API
+        return json.dumps(d) if d else None, caption
 
     def getmsgs(self, peer=None):
         db = 'cli' if self.db_cli else 'bot'
