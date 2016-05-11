@@ -491,7 +491,7 @@ def main(argv):
     parser.add_argument("-l", "--logging", help="logging mode (keep running)", action='store_true')
     parser.add_argument("-L", "--keep-logging", help="first export, then keep logging", action='store_true')
     parser.add_argument("-e", "--tgbin", help="telegram-cli binary path", default="bin/telegram-cli")
-    parser.add_argument("-v", "--verbose", help="print debug messages")
+    parser.add_argument("-v", "--verbose", help="print debug messages", action='store_true')
     args = parser.parse_args(argv)
 
     if args.verbose:
