@@ -491,7 +491,12 @@ def main(argv):
     parser.add_argument("-l", "--logging", help="logging mode (keep running)", action='store_true')
     parser.add_argument("-L", "--keep-logging", help="first export, then keep logging", action='store_true')
     parser.add_argument("-e", "--tgbin", help="telegram-cli binary path", default="bin/telegram-cli")
+    parser.add_argument("-v", "--verbose", help="print debug messages")
     args = parser.parse_args(argv)
+
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+        tgcli.logger.setLevel(logging.DEBUG)
 
     DLDIR = args.output
     init_db(args.db)

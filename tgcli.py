@@ -193,6 +193,7 @@ class TelegramCliInterface:
         Send a command to tg-cli.
         use `resync` for consuming text since last timeout.
         '''
+        logger.debug(cmd)
         self.ready.wait()
         self.sock.settimeout(timeout or self.timeout)
         self.sock.sendall(cmd.encode('utf-8') + b'\n')
