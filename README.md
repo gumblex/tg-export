@@ -99,6 +99,8 @@ dialogs = tgcli.cmd_dialog_list()
 
 `do_nothing()` function does nothing. (for callbacks)
 
+`TelegramCliExited` exception is raised if telegram-cli dies when reading an answer.
+
 ## License
 
 Now it's LGPLv3+.

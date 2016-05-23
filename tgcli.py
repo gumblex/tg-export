@@ -52,6 +52,9 @@ def preexec_ignore_sigint():
     '''
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
+class TelegramCliExited(RuntimeError):
+    pass
+
 class TelegramCliInterface:
     def __init__(self, cmd, extra_args=(), run=True, timeout=60, ignore_sigint=True):
         self.cmd = cmd
@@ -186,7 +189,8 @@ class TelegramCliInterface:
                 return lines[0] + b'\n'
             else:
                 self.buffer += self.sock.recv(1024)
-        return b''
+        # usually there is an assertion error
+        raise TelegramCliExited('telegram-cli unexpectedly exited.')
 
     def send_command(self, cmd, timeout=None, resync=True):
         '''
@@ -198,11 +202,11 @@ class TelegramCliInterface:
         self.sock.settimeout(timeout or self.timeout)
         self.sock.sendall(cmd.encode('utf-8') + b'\n')
         line = self._readline()
-        while resync and not line.startswith(b'ANSWER ') and self.ready.is_set():
+        while resync and not line.startswith(b'ANSWER '):
             line = self._readline()
         size = int(line[7:].decode('ascii'))
         reply = b''
-        while self.ready.is_set() and len(reply) < size:
+        while len(reply) < size:
             reply += self._readline()
         ret = reply.decode('utf-8')
         try:
@@ -221,7 +225,7 @@ class TelegramCliInterface:
                 ' '.join(map(str, (name[4:],) + args)), **kwargs)
             return fn
         else:
-            raise AttributeError
+            raise AttributeError('TelegramCliInterface has no attribute %r' % name)
 
 if __name__ == "__main__":
     import sys

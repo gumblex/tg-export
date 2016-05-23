@@ -403,8 +403,9 @@ def export_holes():
             res = process(TGCLI.send_command('get_message %s' % mid))
             if not res[0]:
                 logging.warning('ID %s may not exist' % mid)
-        except (socket.timeout, ValueError):
-            failed.append(mid)
+        except tgcli.TelegramCliExited:
+            # interface.c:4295: print_message: Assertion `M' failed.
+            logging.warning('ID %s may not exist' % mid)
         except Exception:
             failed.append(mid)
             logging.exception('Failed to get message ID %s' % mid)
