@@ -402,15 +402,15 @@ def export_holes():
         try:
             res = process(TGCLI.send_command('get_message %s' % mid))
             if not res[0]:
-                logging.warning('ID %s may not exist' % mid)
+                logging.warning('%r may not exist [%.2f%%]', msg[:3], (k * 100 / length))
+            elif k % 10 == 0:
+                logging_status(k, False, 100, length)
         except tgcli.TelegramCliExited:
             # interface.c:4295: print_message: Assertion `M' failed.
-            logging.warning('ID %s may not exist' % mid)
+            logging.warning('%r may not exist [%.2f%%]', msg[:3], (k * 100 / length))
         except Exception:
             failed.append(mid)
             logging.exception('Failed to get message ID %s' % mid)
-        if k % 10 == 0:
-            logging_status(k, False, 100, length)
     logging_status(k, True, 100, length)
     purge_queue()
     while failed:
