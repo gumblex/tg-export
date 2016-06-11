@@ -232,4 +232,8 @@ if __name__ == "__main__":
     logging.basicConfig(stream=sys.stderr, format='%(asctime)s [%(levelname)s] %(message)s', level=logging.INFO)
     with TelegramCliInterface(sys.argv[1]) as tgcli:
         for ln in sys.stdin:
-            print(tgcli.send_command(ln.strip()))
+            try:
+                cmd = ln.strip()
+                print(tgcli.send_command(cmd))
+            except Exception:
+                logging.exception('Failed to execute: ' + cmd)
