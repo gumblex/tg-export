@@ -43,10 +43,14 @@ This script can process database written by `export.py` or [tg-chatdig](https://
 
 ```
 usage: logfmt.py [-h] [-o OUTPUT] [-d DB] [-b BOTDB] [-D BOTDB_DEST] [-u]
-                 [-t TEMPLATE] [-p PEER] [-P PEER_PRINT] [-l LIMIT]
-                 [-L HARDLIMIT] [-c CACHEDIR] [-r URLPREFIX]
+                 [-t TEMPLATE] [-P PEER_PRINT] [-l LIMIT] [-L HARDLIMIT]
+                 [-c CACHEDIR] [-r URLPREFIX]
+                 peer
 
 Format exported database file into human-readable format.
+
+positional arguments:
+  peer                  export certain peer id or tg-cli-style peer print name
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -56,12 +60,12 @@ optional arguments:
   -b BOTDB, --botdb BOTDB
                         tg-chatdig bot database path
   -D BOTDB_DEST, --botdb-dest BOTDB_DEST
-                        tg-chatdig bot logged chat id
+                        tg-chatdig bot logged chat id or tg-cli-style peer
+                        name
   -u, --botdb-user      use user information in tg-chatdig database first
   -t TEMPLATE, --template TEMPLATE
                         export template, can be 'txt'(default), 'html',
                         'json', or template file name
-  -p PEER, --peer PEER  export certain peer id
   -P PEER_PRINT, --peer-print PEER_PRINT
                         set print name for the peer
   -l LIMIT, --limit LIMIT

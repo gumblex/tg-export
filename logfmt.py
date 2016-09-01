@@ -656,12 +656,12 @@ def main(argv):
     parser.add_argument("-D", "--botdb-dest", help="tg-chatdig bot logged chat id or tg-cli-style peer name")
     parser.add_argument("-u", "--botdb-user", action="store_true", help="use user information in tg-chatdig database first")
     parser.add_argument("-t", "--template", help="export template, can be 'txt'(default), 'html', 'json', or template file name", default="txt")
-    parser.add_argument("-p", "--peer", help="export certain peer id or tg-cli-style peer name")
     parser.add_argument("-P", "--peer-print", help="set print name for the peer")
     parser.add_argument("-l", "--limit", help="limit the number of fetched messages and set the offset")
     parser.add_argument("-L", "--hardlimit", help="set a hard limit of the number of messages, must be used with -l", type=int, default=100000)
     parser.add_argument("-c", "--cachedir", help="the path of media files")
     parser.add_argument("-r", "--urlprefix", help="the url prefix of media files")
+    parser.add_argument("peer", help="export certain peer id or tg-cli-style peer print name")
     args = parser.parse_args(argv)
 
     msg = Messages(stream=args.template.endswith('html'))
