@@ -26,5 +26,5 @@ else
     limit=500
 fi
 
-python3 logfmt.py -b $BOT_LOG_FILE -d '' -t html -D=$PEER_ID -o=- -p=$PEER_ID -P="$PEER_TITLE" -l $limit -L $HARD_LIMIT -c $CACHE_PATH -r $URL_PREFIX
+python3 logfmt.py -b $BOT_LOG_FILE -d '' -t html -D=$PEER_ID -o=- -P="$PEER_TITLE" -l $limit -L $HARD_LIMIT -c $CACHE_PATH -r $URL_PREFIX $PEER_ID
 
