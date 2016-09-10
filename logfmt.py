@@ -462,6 +462,16 @@ class Messages:
             dm['type'] = 'geo'
             dm['longitude'] = media['location']['longitude']
             dm['latitude'] = media['location']['latitude']
+        elif 'venue' in media:
+            dm['type'] = 'venue'
+            dm['longitude'] = media['venue']['location']['longitude']
+            dm['latitude'] = media['venue']['location']['latitude']
+            if media['venue']['title']:
+                dm['type'] = media['venue']['title']
+            dm['address'] = media['venue']['address']
+            if 'foursquare_id' in media['venue']:
+                dm['provider'] = 'foursquare'
+                dm['venue_id'] = media['venue']['foursquare_id']
         elif 'new_chat_participant' in media:
             user = media['new_chat_participant']
             da['type'] = 'chat_add_user'
@@ -515,10 +525,20 @@ class Messages:
                 d['document'] = {}
             elif 'longitude' in media:
                 # 'type' may be the name of the place
-                d['location'] = {
+                loc = {
                     'longitude': media['longitude'],
                     'latitude': media['latitude']
                 }
+                if media['type'] == 'geo':
+                    d['location'] = loc
+                else:
+                    d['venue'] = {
+                        'location': loc,
+                        'title': media['type'] if media['type'] != 'venue' else '',
+                        'address': media['address']
+                    }
+                    if media.get('provider') == 'foursquare' and 'venue_id' in media:
+                        d['venue']['foursquare_id'] = media['venue_id']
             elif media['type'] == 'contact':
                 del media['type']
                 media['phone_number'] = media.pop('phone')
