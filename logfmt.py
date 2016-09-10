@@ -52,7 +52,8 @@ printname = lambda first, last='': (first + ' ' + last if last else first) or '<
 strftime = lambda date, fmt='%Y-%m-%d %H:%M:%S': time.strftime(fmt, time.localtime(date))
 
 unkuser = lambda user: {
-    'id': user['id'],
+    'peer_id': user['id'],
+    'id': tgl_peer_id_t(tgl_peer_id_t.TGL_PEER_USER, user['id'], 0).dumps(),
     'first_name': user['first_name'],
     'last_name': user.get('last_name'),
     'username': user.get('username'),
