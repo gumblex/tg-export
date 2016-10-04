@@ -502,7 +502,7 @@ def main(argv):
     DLDIR = args.output
     init_db(args.db)
 
-    TGCLI = tgcli.TelegramCliInterface(args.tgbin, extra_args=('-W',), run=False, timeout=30)
+    TGCLI = tgcli.TelegramCliInterface(args.tgbin, extra_args=('-W', '-E',), run=False, timeout=30)
     TGCLI.on_json = MSG_Q.put
     TGCLI.on_info = lambda s: tgcli.logger.info(s) if not re_getmsg.match(s) else None
     #TGCLI.on_text = MSG_Q.put
