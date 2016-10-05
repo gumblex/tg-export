@@ -135,7 +135,10 @@ class TelegramCliInterface:
             except BrokenPipeError:
                 pass
             finally:
-                self.sock.shutdown(socket.SHUT_RDWR)
+                try:
+                    self.sock.shutdown(socket.SHUT_RDWR)
+                except Exception:
+                    pass
                 if self.proc and self.proc.poll() is None:
                     self.proc.terminate()
                     self.proc.wait()
