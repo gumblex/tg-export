@@ -214,7 +214,7 @@ class PeerStore(collections.UserDict):
                 return self.data[self.name[key]]
             else:
                 for k, v in self.name.items():
-                    if key in k:
+                    if key in k and v[1] != 'encr_chat':
                         return self.data[v]
         return {'id': None, 'type': 'user', 'print': key}
 
