@@ -203,6 +203,14 @@ def init_db(filename):
         'print_name TEXT,'
         'finished INTEGER'
     ')')
+    CONN.execute('CREATE INDEX IF NOT EXISTS idx_messages ON '
+        'messages (dest)')
+    CONN.execute('CREATE INDEX IF NOT EXISTS idx_users ON '
+        'users (id+4294967296, username)')
+    CONN.execute('CREATE INDEX IF NOT EXISTS idx_chats ON '
+        'chats (id+8589934592, title)')
+    CONN.execute('CREATE INDEX IF NOT EXISTS idx_channels ON '
+        'channels (id+21474836480, title)')
 
 def update_peer(peer):
     global PEER_CACHE
