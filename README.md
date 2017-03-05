@@ -35,6 +35,8 @@ Common problems with tg-cli are:
 * Half response in the socket interface, while the another half appears after the timeout.
 * Returns an empty array when actually there are remaining messages.
 
+**Note**: When it's trying to get the remaining messages, the telegram-cli will crash like crazy. That's due to non-existent messages. For a quick fix, use [this fork](https://github.com/gumblex/tg) of tg-cli.
+
 Which is called NO WARRANTY™.
 
 ## logfmt.py
