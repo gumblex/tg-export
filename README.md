@@ -1,5 +1,5 @@
 # tg-export
-Export Telegram messages, using [telegram-cli](https://github.com/vysheng/tg). [Patched version](https://github.com/gumblex/tg) recommend.
+Export Telegram messages, using [telegram-cli](https://github.com/vysheng/tg). [Patched version](https://github.com/gumblex/tg) recommended.
 
 This version (v3) is compatible with `vysheng/tg/master` AND `vysheng/tg/test`
 branches.
