@@ -501,6 +501,7 @@ def main(argv):
     parser.add_argument("-d", "--db", help="database path", default="tg-export3.db")
     parser.add_argument("-f", "--force", help="force download all messages", action='store_true')
     parser.add_argument("-B", "--batch-only", help="fetch messages in batch only, don't try to get more missing messages", action='store_true')
+    parser.add_argument("-t", "--timeout", help="tg-cli command timeout", type=int, default=30)
     parser.add_argument("-l", "--logging", help="logging mode (keep running)", action='store_true')
     parser.add_argument("-L", "--keep-logging", help="first export, then keep logging", action='store_true')
     parser.add_argument("-e", "--tgbin", help="telegram-cli binary path", default="bin/telegram-cli")
@@ -514,7 +515,7 @@ def main(argv):
     DLDIR = args.output
     init_db(args.db)
 
-    TGCLI = tgcli.TelegramCliInterface(args.tgbin, extra_args=('-W', '-E'), run=False, timeout=30)
+    TGCLI = tgcli.TelegramCliInterface(args.tgbin, extra_args=('-W', '-E'), run=False, timeout=args.timeout)
     TGCLI.on_json = MSG_Q.put
     TGCLI.on_info = lambda s: tgcli.logger.info(s) if not re_getmsg.match(s) else None
     #TGCLI.on_text = MSG_Q.put
