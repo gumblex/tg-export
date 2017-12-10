@@ -443,12 +443,15 @@ def export_holes():
         failed = newlist
         purge_queue()
 
-def export_text(force=False):
+def export_text(peer=None, force=False):
     #if force:
         #reset_finished()
     logging.info('Getting contacts...')
     update_peer(TGCLI.cmd_get_self())
     items = TGCLI.cmd_contact_list()
+    peer_obj = None
+    if peer:
+        peer_match = re.match('^(\w+)#id(\d+)$', peer)
     for item in items:
         update_peer(item)
     purge_queue()
@@ -463,6 +466,19 @@ def export_text(force=False):
         dcount += 100
     for item in dlist:
         update_peer(item)
+        if peer and peer_obj is None:
+            if not peer_match:
+                if peer in item.get('print_name', ''):
+                    peer_obj = item
+            elif ((item.get('peer_type') or item.get('type')) == peer_match.group(1)
+                and str(item.get('peer_id') or item.get('id')) == peer_match.group(2)):
+                peer_obj = item
+    if peer_obj:
+        logging.info('Peer: %r' % peer_obj)
+        dlist = [peer_obj]
+    elif peer:
+        logging.info('Peer not found: %s' % peer)
+        return
     logging.info('Exporting messages...')
     failed = []
     # we need some uncertainty to work around the uncertainty of telegram-cli
@@ -500,6 +516,7 @@ def main(argv):
     parser.add_argument("-o", "--output", help="output path", default="export")
     parser.add_argument("-d", "--db", help="database path", default="tg-export3.db")
     parser.add_argument("-f", "--force", help="force download all messages", action='store_true')
+    parser.add_argument("-p", "--peer", help="only download messages for this peer")
     parser.add_argument("-B", "--batch-only", help="fetch messages in batch only, don't try to get more missing messages", action='store_true')
     parser.add_argument("-t", "--timeout", help="tg-cli command timeout", type=int, default=30)
     parser.add_argument("-l", "--logging", help="logging mode (keep running)", action='store_true')
@@ -529,7 +546,7 @@ def main(argv):
 
     try:
         if not args.logging:
-            export_text(args.force)
+            export_text(args.peer, args.force)
             if not args.batch_only:
                 export_holes()
         if args.logging or args.keep_logging:
