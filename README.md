@@ -11,7 +11,8 @@ To convert old databases (v1 or v2), run `python3 dbconvert.py [old.db [new.db]]
 
 ```
 $ python3 export.py -h
-usage: export.py [-h] [-o OUTPUT] [-d DB] [-f] [-l] [-e TGBIN]
+usage: export.py [-h] [-o OUTPUT] [-d DB] [-f] [-p PEER] [-B] [-t TIMEOUT]
+                 [-l] [-L] [-e TGBIN] [-v]
 
 Export Telegram messages.
 
@@ -21,9 +22,18 @@ optional arguments:
                         output path
   -d DB, --db DB        database path
   -f, --force           force download all messages
+  -p PEER, --peer PEER  only download messages for this peer (format:
+                        channel#id1001234567, or use partial name/title as
+                        shown in tgcli)
+  -B, --batch-only      fetch messages in batch only, don't try to get more
+                        missing messages
+  -t TIMEOUT, --timeout TIMEOUT
+                        tg-cli command timeout
   -l, --logging         logging mode (keep running)
+  -L, --keep-logging    first export, then keep logging
   -e TGBIN, --tgbin TGBIN
                         telegram-cli binary path
+  -v, --verbose         print debug messages
 ```
 
 **Lots** of workaround about the unreliability of tg-cli is included (in this script and `tgcli.py`), so the script itself may be unreliable as well.
