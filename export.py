@@ -215,6 +215,30 @@ def init_db(filename):
     except sqlite3.OperationalError:
         # < 3.9.0
         pass
+    CONN.execute('''
+    CREATE VIEW IF NOT EXISTS v_messages AS
+    SELECT
+      m.id,
+      srcp.type src_type,
+      (CASE srcp.type WHEN 'user' THEN src-4294967296
+       WHEN 'chat' THEN src-8589934592 ELSE src-21474836480 END) src_id,
+      srcp.print_name src_name,
+      dstp.type dest_type,
+      (CASE dstp.type WHEN 'user' THEN dest-4294967296
+       WHEN 'chat' THEN dest-8589934592 ELSE dest-21474836480 END) dest_id,
+      dstp.print_name dest_name,
+      text, media, date,
+      fwdp.type fwd_src_type,
+      (CASE fwdp.type WHEN 'user' THEN fwd_src-4294967296
+       WHEN 'chat' THEN fwd_src-8589934592
+       ELSE fwd_src-21474836480 END) fwd_src_id,
+      fwdp.print_name fwd_src_name,
+      fwd_date, reply_id, out, unread, service, action, flags
+    FROM messages m
+    LEFT JOIN peerinfo srcp ON src=srcp.id
+    LEFT JOIN peerinfo dstp ON dest=dstp.id
+    LEFT JOIN peerinfo fwdp ON fwd_src=fwdp.id
+    ''')
 
 def update_peer(peer):
     global PEER_CACHE
