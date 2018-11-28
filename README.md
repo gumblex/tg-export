@@ -1,4 +1,7 @@
 # tg-export
+
+*Deprecation notice*: Since tg-cli is not maintained and becomes unusable, this project is deprecated. Please use alternatives like [telegram-export](https://github.com/expectocode/telegram-export) instead.
+
 Export Telegram messages, using [telegram-cli](https://github.com/vysheng/tg). [Patched version](https://github.com/gumblex/tg) recommended.
 
 This version (v3) is compatible with `vysheng/tg/master` AND `vysheng/tg/test`
